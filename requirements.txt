@@ -1,0 +1,17 @@
+# Parrot AI - Voice Cloning Requirements
+# For use with: pip install -r requirements.txt
+# Note: Assumes PyTorch with CUDA is already installed
+
+qwen-tts>=0.0.5
+gradio>=6.0.0
+transformers>=4.45.0
+accelerate>=1.0.0
+soundfile>=0.13.0
+librosa>=0.10.0
+numpy>=2.0.0
+einops
+sox
+onnxruntime
+
+# Flash Attention 2 (requires separate install with --no-build-isolation)
+# pip install flash-attn --no-build-isolation
