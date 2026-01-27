@@ -77,3 +77,7 @@ environment.txt
 
 # Frontend is a separate repo
 frontend/
+
+# Local Database & Storage
+voices.db
+saved_voices/
