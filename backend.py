@@ -17,11 +17,13 @@ import sqlite3
 import uuid
 import os
 import shutil
+import re
 from datetime import datetime
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Optional, List
 from fastapi import FastAPI, File, Form, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
+from pydantic import BaseModel
 import gc
 from qwen_tts import Qwen3TTSModel, VoiceClonePromptItem
 
@@ -162,6 +164,52 @@ import whisper
 print("[Parrot AI] Loading Whisper model...")
 whisper_model = whisper.load_model("base", device=DEVICE)
 print("[OK] Whisper loaded successfully!")
+
+# ============================================================================
+# Helpers
+# ============================================================================
+
+def smart_split_text(text: str, max_chars: int = 500) -> List[str]:
+    """
+    Splits long text into smaller chunks based on sentence boundaries.
+    Prioritizes splitting at ., !, ?, then ;, ,, and finally space.
+    """
+    if len(text) <= max_chars:
+        return [text]
+
+    chunks = []
+    current_chunk = ""
+    
+    # Simple sentence splitting heuristic (can be improved with nltk/spacy)
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    
+    for sentence in sentences:
+        if len(current_chunk) + len(sentence) < max_chars:
+            current_chunk += sentence + " "
+        else:
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+            current_chunk = sentence + " "
+            
+            # 1. Handle extremely long single sentences (recursive split)
+            while len(current_chunk) > max_chars:
+                # Force split at nearest punctuation or space
+                split_point = current_chunk.rfind(',', 0, max_chars)
+                if split_point == -1:
+                    split_point = current_chunk.rfind(' ', 0, max_chars)
+                
+                if split_point != -1:
+                   chunks.append(current_chunk[:split_point+1].strip())
+                   current_chunk = current_chunk[split_point+1:]
+                else: 
+                   # Hard split if no spaces found (rare)
+                   chunks.append(current_chunk[:max_chars].strip())
+                   current_chunk = current_chunk[max_chars:]
+
+    if current_chunk:
+        chunks.append(current_chunk.strip())
+    
+    return chunks
 
 # ============================================================================
 # API Endpoints
@@ -397,60 +445,73 @@ async def _load_audio_for_prompt(audio_bytes: bytes) -> list:
     return [(audio.astype(np.float32), 16000)]
 
 
-async def generate_with_progress(
-    prompt: str,
-    voice_id: Optional[str],
-    audio_file: Optional[UploadFile],
-    reference_text: str,
-    use_transcript_flag: bool # Explicit flag from frontend checkbox
-) -> AsyncGenerator[str, None]:
+async def generate_with_progress(prompt, voice_id, audio_file, reference_text, use_transcript, temperature=0.8, top_p=0.8, top_k=50, repetition_penalty=1.1):
     """Generator that yields SSE progress events during voice generation."""
     
     def send_event(event_type: str, data: dict) -> str:
         return f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
     
-    try:
-        # Load audio data (from DB or Upload)
-        yield send_event("progress", {"stage": "loading", "percent": 5, "message": "Loading voice data..."})
-        await asyncio.sleep(0.1)
+    yield send_event("progress", {"stage": "init", "percent": 0, "message": "Initializing generation..."})
         
-        # Helper to resolve input source
+    try:
+        # Stage 1: Loading/Processing Voice
+        mode = "unknown"
+        voice_prompt = None
+        
         if voice_id:
-             # Look for pre-computed embedding
-             embedding_path = os.path.join(VOICES_DIR, f"{voice_id}.pt")
-             
-             if os.path.exists(embedding_path):
-                 yield send_event("progress", {"stage": "loading", "percent": 5, "message": "Loading voice profile..."})
-                 print(f"Loading cached voice profile: {embedding_path}")
-                 voice_prompt = torch.load(embedding_path)
-                 mode = "cached profile"
-             else:
-                 # Fallback to legacy behavior (load audio)
-                 audio_bytes, final_ref_text, has_transcript = await get_audio_data(voice_id, None, "")
-                 should_use_transcript = bool(final_ref_text)
-                 ref_text_to_use = final_ref_text
-                 ref_audio = await _load_audio_for_prompt(audio_bytes)
-                 
-                 # Create prompt (legacy fallback)
-                 if should_use_transcript and ref_text_to_use.strip():
-                     voice_prompt = manager.get_model().create_voice_clone_prompt(
-                         ref_audio=ref_audio,
-                         ref_text=ref_text_to_use.strip()
-                     )
-                     mode = "legacy transcript mode"
-                 else:
-                     voice_prompt = manager.get_model().create_voice_clone_prompt(
-                         ref_audio=ref_audio,
-                         x_vector_only_mode=True
-                     )
-                     mode = "legacy x-vector mode"
-
+           # ... (existing voice loading logic) ...
+           conn = get_db() # Changed from get_db_connection() to get_db() to match existing code
+           voice = conn.execute('SELECT * FROM voices WHERE id = ?', (voice_id,)).fetchone()
+           conn.close()
+           
+           if not voice:
+              yield send_event("error", {"message": "Voice not found"})
+              return
+           
+           mode = "saved voice"
+           # Check if we have a pre-computed embedding
+           embedding_path = os.path.join(VOICES_DIR, f"{voice_id}.pt") # Changed from Saved_Voices_Dir to VOICES_DIR
+           
+           if os.path.exists(embedding_path):
+               print(f"Loading cached embedding for voice {voice_id}")
+               voice_prompt = torch.load(embedding_path)
+               mode = "saved voice (cached)"
+           else:
+               # Fallback to computing from audio
+               audio_path = os.path.join(VOICES_DIR, voice['filename']) # Changed from Saved_Voices_Dir to VOICES_DIR
+               if not os.path.exists(audio_path):
+                   yield send_event("error", {"message": "Voice audio file missing"})
+                   return
+               
+               yield send_event("progress", {"stage": "analyzing", "percent": 20, "message": "Analyzing voice characteristics..."})
+               
+               # Load audio
+               with open(audio_path, "rb") as f:
+                   audio_bytes = f.read()
+               ref_audio = await _load_audio_for_prompt(audio_bytes)
+               
+               if voice['transcript']:
+                   voice_prompt = manager.get_model().create_voice_clone_prompt(
+                       ref_audio=ref_audio,
+                       ref_text=voice['transcript']
+                   )
+               else:
+                   voice_prompt = manager.get_model().create_voice_clone_prompt(
+                       ref_audio=ref_audio,
+                       x_vector_only_mode=True
+                   )
+        
         else:
-             # Use uploaded file logic
+             # Uploaded file logic
              if not audio_file:
-                 raise HTTPException(status_code=400, detail="No audio source provided")
+                 yield send_event("error", {"message": "No voice provided"})
+                 return
+             
+             yield send_event("progress", {"stage": "analyzing", "percent": 20, "message": "Processing uploaded audio..."})
              audio_bytes = await audio_file.read()
-             should_use_transcript = use_transcript_flag
+             
+             # Prepare prompt
+             should_use_transcript = use_transcript
              ref_text_to_use = reference_text
              
              ref_audio = await _load_audio_for_prompt(audio_bytes)
@@ -472,23 +533,37 @@ async def generate_with_progress(
         await asyncio.sleep(0.1)
         
         # Stage 3: Generating speech (the long part)
-        yield send_event("progress", {"stage": "generating", "percent": 50, "message": "Generating speech (this takes a while)..."})
-        await asyncio.sleep(0.1)
+        yield send_event("progress", {"stage": "generating", "percent": 50, "message": "Generating speech..."})
         
-        print(f"Generating speech for: '{prompt}'")
+        print(f"Generating for prompt: '{prompt[:50]}...' Temp: {temperature}")
+        text_chunks = smart_split_text(prompt)
+        print(f"Split into {len(text_chunks)} chunks")
+        
         start_time = time.time()
-        
-        # Run generation in a thread to not block
+        all_wavs = []
+        output_sr = 24000
         loop = asyncio.get_event_loop()
-        wavs, output_sr = await loop.run_in_executor(
-            None,
-            lambda: manager.get_model().generate_voice_clone(
-                text=prompt,
-                language="Auto",
-                voice_clone_prompt=voice_prompt
+
+        total_chunks = len(text_chunks)
+        for i, chunk in enumerate(text_chunks):
+            chunk_progress = 50 + int((i / total_chunks) * 40) # 50% to 90%
+            yield send_event("progress", {"stage": "generating", "percent": chunk_progress, "message": f"Generating part {i+1}/{total_chunks}..."})
+            
+            wavs, sr = await loop.run_in_executor(
+                None,
+                lambda: manager.get_model().generate_voice_clone(
+                    text=chunk,
+                    language="Auto",
+                    voice_clone_prompt=voice_prompt,
+                    temperature=temperature,
+                    top_p=top_p,
+                    top_k=top_k,
+                    repetition_penalty=repetition_penalty
+                )
             )
-        )
-        
+            all_wavs.append(wavs[0])
+            output_sr = sr
+
         gen_time = time.time() - start_time
         print(f"Generation completed in {gen_time:.1f}s")
         
@@ -499,9 +574,12 @@ async def generate_with_progress(
         yield send_event("progress", {"stage": "encoding", "percent": 95, "message": "Encoding audio file..."})
         await asyncio.sleep(0.1)
         
+        # Concatenate chunks
+        combined_wav = np.concatenate(all_wavs)
+        
         # Convert to WAV bytes
         audio_buffer = io.BytesIO()
-        sf.write(audio_buffer, wavs[0], output_sr, format='WAV')
+        sf.write(audio_buffer, combined_wav, output_sr, format='WAV')
         audio_buffer.seek(0)
         audio_data = audio_buffer.read()
         
@@ -525,7 +603,11 @@ async def generate_voice_stream(
     use_transcript: str = Form("false"),
     reference_text: str = Form(""),
     audio_file: UploadFile = File(None),
-    voice_id: str = Form(None)
+    voice_id: str = Form(None),
+    temperature: float = Form(0.8),
+    top_p: float = Form(0.8),
+    top_k: int = Form(50),
+    repetition_penalty: float = Form(1.1)
 ):
     """
     Generate cloned voice with streaming progress updates.
@@ -537,7 +619,10 @@ async def generate_voice_stream(
     use_transcript_bool = use_transcript.lower() == "true"
     
     return StreamingResponse(
-        generate_with_progress(prompt, voice_id, audio_file, reference_text, use_transcript_bool),
+        generate_with_progress(
+            prompt, voice_id, audio_file, reference_text, use_transcript_bool,
+            temperature, top_p, top_k, repetition_penalty
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -660,27 +745,49 @@ async def switch_model(target_model: str = Form(...)):
 @app.post("/api/generate-design")
 async def generate_design(
     text: str = Form(...),
-    instruct: str = Form(...)
+    instruct: str = Form(...),
+    temperature: float = Form(0.8),
+    top_p: float = Form(0.8),
+    top_k: int = Form(50),
+    repetition_penalty: float = Form(1.1)
 ):
     if manager.model_type != "design":
          raise HTTPException(status_code=400, detail="Please switch to 'Voice Design' model first.")
     
     try:
-        print(f"Generating Voice Design: '{text}' (Instruct: '{instruct}')")
+        print(f"Generating Voice Design: '{text[:50]}...' (Inst: '{instruct[:50]}') Temp: {temperature}")
         
+        # Split text for long-form generation
+        text_chunks = smart_split_text(text)
+        print(f"Split into {len(text_chunks)} chunks")
+
         # Run generation in a thread
         loop = asyncio.get_event_loop()
-        wavs, output_sr = await loop.run_in_executor(
-            None,
-            lambda: manager.get_model().generate_voice_design(
-                text=text,
-                instruct=instruct,
-                language="Auto"
+        
+        all_wavs = []
+        output_sr = 24000 # default
+        
+        for chunk in text_chunks:
+            wavs, sr = await loop.run_in_executor(
+                None,
+                lambda: manager.get_model().generate_voice_design(
+                    text=chunk,
+                    instruct=instruct,
+                    language="Auto",
+                    temperature=temperature,
+                    top_p=top_p,
+                    top_k=top_k,
+                    repetition_penalty=repetition_penalty
+                )
             )
-        )
+            all_wavs.append(wavs[0])
+            output_sr = sr
+            
+        # Concatenate all chunks
+        combined_wav = np.concatenate(all_wavs)
         
         audio_buffer = io.BytesIO()
-        sf.write(audio_buffer, wavs[0], output_sr, format='WAV')
+        sf.write(audio_buffer, combined_wav, output_sr, format='WAV')
         audio_buffer.seek(0)
         
         return StreamingResponse(
@@ -699,26 +806,44 @@ async def generate_design(
 async def generate_preset(
     text: str = Form(...),
     speaker: str = Form(...),
+    temperature: float = Form(0.8),
+    top_p: float = Form(0.8),
+    top_k: int = Form(50),
+    repetition_penalty: float = Form(1.1)
 ):
     if manager.model_type != "custom":
          raise HTTPException(status_code=400, detail="Please switch to 'Custom Voice' model first.")
     
     try:
-        print(f"Generating Custom Voice: '{text}' (Speaker: '{speaker}')")
+        print(f"Generating Custom Voice: '{text[:50]}...' (Spk: '{speaker}') Temp: {temperature}")
         
-        # Run generation in a thread
+        text_chunks = smart_split_text(text)
+        print(f"Split into {len(text_chunks)} chunks")
+        
         loop = asyncio.get_event_loop()
-        wavs, output_sr = await loop.run_in_executor(
-            None,
-            lambda: manager.get_model().generate_custom_voice(
-                text=text,
-                speaker=speaker,
-                language="Auto"
+        all_wavs = []
+        output_sr = 24000
+        
+        for chunk in text_chunks:
+            wavs, sr = await loop.run_in_executor(
+                None,
+                lambda: manager.get_model().generate_custom_voice(
+                    text=chunk,
+                    speaker=speaker,
+                    language="Auto",
+                    temperature=temperature,
+                    top_p=top_p,
+                    top_k=top_k,
+                    repetition_penalty=repetition_penalty
+                )
             )
-        )
+            all_wavs.append(wavs[0])
+            output_sr = sr
+            
+        combined_wav = np.concatenate(all_wavs)
         
         audio_buffer = io.BytesIO()
-        sf.write(audio_buffer, wavs[0], output_sr, format='WAV')
+        sf.write(audio_buffer, combined_wav, output_sr, format='WAV')
         audio_buffer.seek(0)
         
         return StreamingResponse(
@@ -735,6 +860,138 @@ async def generate_preset(
 # ============================================================================
 # Run
 # ============================================================================
+
+
+# ============================================================================
+# Pydantic Models for Dialogue
+# ============================================================================
+
+class DialogueLine(BaseModel):
+    text: str
+    speaker: str # One of the PRESET keys or a voice_id
+    type: str # "preset" or "cloned"
+    temperature: float = 0.8
+    top_p: float = 0.8
+    top_k: int = 50
+    repetition_penalty: float = 1.1
+
+class DialogueRequest(BaseModel):
+    lines: List[DialogueLine]
+
+@app.post("/api/generate-dialogue")
+async def generate_dialogue(request: DialogueRequest):
+    """
+    Generates a multi-speaker audio file by processing lines sequentially.
+    Stitches the output into a single WAV file with 0.3s silence between turns.
+    """
+    if not request.lines:
+         raise HTTPException(status_code=400, detail="Script cannot be empty")
+         
+    print(f"Generating Dialogue with {len(request.lines)} lines")
+    
+    loop = asyncio.get_event_loop()
+    all_audio_segments = []
+    output_sr = 24000
+    
+    # Pre-generate silence (0.3s)
+    silence = np.zeros(int(output_sr * 0.3))
+    
+    for i, line in enumerate(request.lines):
+        print(f"[{i+1}/{len(request.lines)}] generating line for {line.speaker}...")
+        
+        # 1. Determine Model Type and Switch if needed
+        needed_model = "custom" if line.type == "preset" else "base"
+        
+        if manager.model_type != needed_model:
+            print(f"Switching model to {needed_model} for {line.speaker}...")
+            # Run in executor to prevent blocking
+            await loop.run_in_executor(None, lambda: manager.load_model(needed_model))
+            
+        # 2. Generate Audio
+        wavs = None
+        
+        if line.type == "preset":
+            # Generate Custom Voice
+            wavs, sr = await loop.run_in_executor(
+                None,
+                lambda: manager.get_model().generate_custom_voice(
+                    text=line.text,
+                    speaker=line.speaker,
+                    language="Auto",
+                    temperature=line.temperature,
+                    top_p=line.top_p,
+                    top_k=line.top_k,
+                    repetition_penalty=line.repetition_penalty
+                )
+            )
+            output_sr = sr
+            
+        else: # type == "cloned"
+             # Generate Cloned Voice
+             voice_id = line.speaker
+             
+             # Load voice prompt
+             mode = "unknown"
+             voice_prompt = None
+             
+             # Check for pre-computed embedding
+             embedding_path = os.path.join(VOICES_DIR, f"{voice_id}.pt")
+             
+             if os.path.exists(embedding_path):
+                 voice_prompt = torch.load(embedding_path)
+             else:
+                 # Fallback: Load from DB and compute
+                 conn = get_db()
+                 voice = conn.execute('SELECT * FROM voices WHERE id = ?', (voice_id,)).fetchone()
+                 conn.close()
+                 
+                 if not voice:
+                     print(f"Skipping line: Voice {voice_id} not found")
+                     continue
+                     
+                 audio_path = os.path.join(VOICES_DIR, voice['filename'])
+                 with open(audio_path, "rb") as f:
+                    audio_bytes = f.read()
+                 
+                 ref_audio = await _load_audio_for_prompt(audio_bytes)
+                 
+                 if voice['transcript']:
+                    voice_prompt = manager.get_model().create_voice_clone_prompt(ref_audio=ref_audio, ref_text=voice['transcript'])
+                 else:
+                    voice_prompt = manager.get_model().create_voice_clone_prompt(ref_audio=ref_audio, x_vector_only_mode=True)
+
+             # Generate
+             wavs, sr = await loop.run_in_executor(
+                None,
+                lambda: manager.get_model().generate_voice_clone(
+                    text=line.text,
+                    language="Auto",
+                    voice_clone_prompt=voice_prompt,
+                    temperature=line.temperature,
+                    top_p=line.top_p,
+                    top_k=line.top_k,
+                    repetition_penalty=line.repetition_penalty
+                )
+            )
+             output_sr = sr
+
+        if wavs is not None:
+             all_audio_segments.append(wavs[0])
+             # Add silence after every line except the last
+             if i < len(request.lines) - 1:
+                 all_audio_segments.append(silence)
+    
+    # 3. Concatenate and Return
+    if not all_audio_segments:
+        raise HTTPException(status_code=500, detail="No audio generated")
+        
+    combined_wav = np.concatenate(all_audio_segments)
+    
+    audio_buffer = io.BytesIO()
+    sf.write(audio_buffer, combined_wav, output_sr, format='WAV')
+    audio_buffer.seek(0)
+    
+    return StreamingResponse(audio_buffer, media_type="audio/wav")
 
 if __name__ == "__main__":
     import uvicorn

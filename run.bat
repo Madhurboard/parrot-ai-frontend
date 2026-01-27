@@ -27,7 +27,13 @@ echo [OK] Virtual environment found
 echo [OK] SoX path configured
 echo.
 
-:: Run the application using venv Python
-.venv\Scripts\python.exe app.py
+:: Run the FastAPI Backend
+.venv\Scripts\python.exe -m uvicorn backend:app --host 0.0.0.0 --port 8000 --reload
 
 pause
+
+:: Run the backend 
+.\run.bat
+:: Run the Next.js Frontend
+npm run dev
+
