@@ -3,10 +3,9 @@
   <p align="center"><strong>If you can hear it, we can clone it.</strong></p>
   <p align="center">
     <a href="#features">Features</a> •
-    <a href="#demo">Demo</a> •
+    <a href="#architecture">Architecture</a> •
     <a href="#installation">Installation</a> •
-    <a href="#usage">Usage</a> •
-    <a href="#architecture">Architecture</a>
+    <a href="#usage">Usage</a>
   </p>
 </p>
 
@@ -20,17 +19,24 @@ A powerful voice cloning application powered by **Qwen3-TTS-12Hz-1.7B-Base**. Up
 - **⚡ GPU Accelerated** - Runs on CUDA for fast inference
 - **🎙️ Dual Input Modes** - Record via microphone or upload audio files
 - **📝 Optional Transcript** - Provide transcript for even better voice matching
-- **🌐 Web Interface** - Beautiful Gradio-based UI accessible from any browser
-- **🚀 Easy Setup** - Simple installation with pip
+- **🌐 Web Interface** - Modern Next.js React UI accessible from any browser
+- **🚀 Easy Setup** - Simple installation with pip and npm
 
-## 🎬 Demo
+## 🏗️ Architecture
 
-The application provides a web interface where you can:
+This project uses a split architecture:
 
-1. Upload or record a reference voice sample
-2. Optionally provide a transcript of the reference audio
-3. Enter the text you want the cloned voice to speak
-4. Generate and download the cloned audio
+- **Backend (Port 8000)**: Python/FastAPI server hosting the Qwen3-TTS model.
+- **Frontend (Port 3000)**: Next.js React application for the user interface.
+
+> **Note:** The frontend code is maintained in a separate repository: [parrot-ai-frontend-qwen](https://github.com/GODOSTROYER/parrot-ai-frontend-qwen)
+
+```mermaid
+graph LR
+    User[Web Browser] -- port 3000 --> Frontend[Next.js Frontend]
+    Frontend -- port 8000 --> Backend[FastAPI Backend]
+    Backend --> Model[Qwen3-TTS Model]
+```
 
 ## 📋 Prerequisites
 
@@ -39,6 +45,7 @@ Before installing, ensure you have:
 | Requirement  | Version   | Notes                          |
 | ------------ | --------- | ------------------------------ |
 | **Python**   | 3.10+     | Tested with 3.12               |
+| **Node.js**  | 18+       | Required for frontend          |
 | **CUDA GPU** | 8GB+ VRAM | RTX 3060 or better recommended |
 | **PyTorch**  | 2.0+      | With CUDA support              |
 | **SoX**      | 14.4.2+   | Audio processing library       |
@@ -47,7 +54,7 @@ Before installing, ensure you have:
 
 1. Download from: https://sourceforge.net/projects/sox/files/sox/
 2. Install to `C:\Program Files\sox-14.4.2`
-3. Add to PATH or use the provided `run.bat`
+3. Add to PATH or use the provided `run.bat` (backend only)
 
 ## 🚀 Installation
 
@@ -58,57 +65,66 @@ git clone https://github.com/GODOSTROYER/Voice-Cloner-Qwen-Arnav.git
 cd Voice-Cloner-Qwen-Arnav
 ```
 
-### 2. Create Virtual Environment
+### 2. Backend Installation
+
+Set up the Python environment for the API server.
 
 ```bash
+# Create virtual environment
 python -m venv .venv
 
-# Windows
+# Activate (Windows)
 .venv\Scripts\activate
 
-# Linux/Mac
-source .venv/bin/activate
-```
-
-### 3. Install PyTorch with CUDA
-
-```bash
-# For CUDA 12.1 (adjust for your CUDA version)
+# Install PyTorch with CUDA (Adjust for your version)
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-```
 
-### 4. Install Dependencies
-
-```bash
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-### 5. (Optional) Install Flash Attention 2
+### 3. Frontend Installation
 
-For faster inference on supported GPUs:
+Set up the Next.js web interface.
 
 ```bash
-pip install flash-attn --no-build-isolation
+cd frontend
+npm install
+# Return to root
+cd ..
 ```
-
-> **Note:** Flash Attention requires CUDA Toolkit and Visual Studio Build Tools on Windows. The app works without it (uses PyTorch's native attention).
 
 ## 💻 Usage
 
-### Quick Start (Windows)
+You need to run **two separate terminals** to start the full application.
+
+### Terminal 1: Start Backend
+
+This starts the API server on port 8000.
+
+**Option A: Using Batch Script (Windows)**
 
 ```bash
 run.bat
 ```
 
-### Manual Start
+**Option B: Manual Start**
 
 ```bash
+.venv\Scripts\activate
 # Ensure SoX is in PATH
-set PATH=%PATH%;C:\Program Files\sox-14.4.2
+python -m uvicorn backend:app --host 0.0.0.0 --port 8000 --reload
+```
 
-# Run the app
-python app.py
+Wait until you see `Application startup complete`.
+
+### Terminal 2: Start Frontend
+
+This starts the web UI on port 3000.
+
+```bash
+cd frontend
+npm run dev
 ```
 
 ### Access the Web UI
@@ -116,36 +132,8 @@ python app.py
 Open your browser and navigate to:
 
 ```
-http://localhost:7860
+http://localhost:3000
 ```
-
-## 🏗️ Architecture
-
-```
-Voice-Cloner-Qwen-Arnav/
-├── app.py              # Main Gradio application
-├── requirements.txt    # Python dependencies
-├── run.bat            # Windows launcher script
-└── website/           # Static web assets
-    ├── index.html     # Landing page
-    ├── index.css      # Styles
-    └── index.js       # JavaScript
-```
-
-### How It Works
-
-```mermaid
-graph LR
-    A[Reference Audio] --> B[Audio Processing]
-    B --> C[Voice Embedding]
-    C --> D[Qwen3-TTS Model]
-    E[Text Input] --> D
-    D --> F[Cloned Speech]
-```
-
-1. **Audio Processing** - Reference audio is loaded and preprocessed using librosa
-2. **Voice Embedding** - The model extracts voice characteristics (x-vector or full prompt)
-3. **Text-to-Speech** - Qwen3-TTS generates speech with the cloned voice characteristics
 
 ## 📝 Tips for Best Results
 
@@ -158,16 +146,22 @@ graph LR
 
 Key parameters in `app.py`:
 
-| Parameter     | Default                         | Description                    |
-| ------------- | ------------------------------- | ------------------------------ |
-| `MODEL_NAME`  | `Qwen/Qwen3-TTS-12Hz-1.7B-Base` | HuggingFace model path         |
-| `DEVICE`      | `cuda:0`                        | GPU device (falls back to CPU) |
-| `server_port` | `7860`                          | Web server port                |
+| Parameter    | Default                         | Description                    |
+| ------------ | ------------------------------- | ------------------------------ |
+| `MODEL_NAME` | `Qwen/Qwen3-TTS-12Hz-1.7B-Base` | HuggingFace model path         |
+| `DEVICE`     | `cuda:0`                        | GPU device (falls back to CPU) |
+
+## 📐 Troubleshooting
+
+- **QuotaExceededError**: Clear the browser's Local Storage if you generate too much history.
+- **Port Conflicts**: Ensure ports 8000 and 3000 are free.
+- **CORS Errors**: Ensure the backend is running and `localhost:3000` is in the allowed origins list in `backend.py`.
 
 ## 🙏 Credits
 
 - **Model**: [Qwen3-TTS](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base) by Alibaba
-- **UI Framework**: [Gradio](https://gradio.app/)
+- **Backend Framework**: [FastAPI](https://fastapi.tiangolo.com/)
+- **Frontend Framework**: [Next.js](https://nextjs.org/)
 
 ## 📜 License
 

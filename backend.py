@@ -8,23 +8,28 @@ Run with: uvicorn backend:app --host 0.0.0.0 --port 8000 --reload
 import io
 import json
 import time
-import torch
-import librosa
-import asyncio
-import numpy as np
-import soundfile as sf
-import sqlite3
 import uuid
 import os
 import shutil
 import re
+import gc
+import asyncio
+import sqlite3
+import base64
 from datetime import datetime
-from typing import AsyncGenerator, Optional, List
+from typing import AsyncGenerator, Optional, List, Tuple, Dict, Any, Union
+
+import torch
+import numpy as np
+import librosa
+import soundfile as sf
+import whisper
+
 from fastapi import FastAPI, File, Form, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
-import gc
+
 from qwen_tts import Qwen3TTSModel, VoiceClonePromptItem
 
 # ============================================================================
@@ -165,22 +170,52 @@ print("[Parrot AI] Loading Whisper model...")
 whisper_model = whisper.load_model("base", device=DEVICE)
 print("[OK] Whisper loaded successfully!")
 
+
 # ============================================================================
 # Helpers
 # ============================================================================
 
+async def _load_audio_bytes(audio_bytes: bytes) -> Tuple[np.ndarray, int]:
+    """Helper to load audio bytes into numpy array."""
+    audio_io = io.BytesIO(audio_bytes)
+    # Run librosa in executor to avoid blocking main thread
+    loop = asyncio.get_event_loop()
+    audio, sr = await loop.run_in_executor(None, lambda: librosa.load(audio_io, sr=16000, mono=True))
+    return audio.astype(np.float32), 16000
+
+async def _create_voice_profile(model: Qwen3TTSModel, audio_bytes: bytes, transcript: Optional[str] = None) -> Any:
+    """
+    Unified helper to create a voice profile from audio bytes.
+    Handles both transcript-based and x-vector extraction.
+    """
+    audio, sr = await _load_audio_bytes(audio_bytes)
+    ref_audio = [(audio, sr)]
+
+    if transcript and transcript.strip():
+        # Full voice clone with transcript (higher quality)
+        return model.create_voice_clone_prompt(
+            ref_audio=ref_audio,
+            ref_text=transcript.strip()
+        )
+    else:
+        # X-vector only mode (faster, no transcript needed)
+        return model.create_voice_clone_prompt(
+            ref_audio=ref_audio,
+            x_vector_only_mode=True
+        )
+
 def smart_split_text(text: str, max_chars: int = 500) -> List[str]:
     """
     Splits long text into smaller chunks based on sentence boundaries.
-    Prioritizes splitting at ., !, ?, then ;, ,, and finally space.
+    Prioritizes splitting at punctuation to preserve flow.
     """
     if len(text) <= max_chars:
         return [text]
 
-    chunks = []
+    chunks: List[str] = []
     current_chunk = ""
     
-    # Simple sentence splitting heuristic (can be improved with nltk/spacy)
+    # Split by sentence endings using regex lookbehind
     sentences = re.split(r'(?<=[.!?])\s+', text)
     
     for sentence in sentences:
@@ -189,11 +224,12 @@ def smart_split_text(text: str, max_chars: int = 500) -> List[str]:
         else:
             if current_chunk:
                 chunks.append(current_chunk.strip())
+            
+            # Reset current chunk
             current_chunk = sentence + " "
             
-            # 1. Handle extremely long single sentences (recursive split)
+            # Handle extremely long single sentences by splitting at commas or spaces
             while len(current_chunk) > max_chars:
-                # Force split at nearest punctuation or space
                 split_point = current_chunk.rfind(',', 0, max_chars)
                 if split_point == -1:
                     split_point = current_chunk.rfind(' ', 0, max_chars)
@@ -202,7 +238,7 @@ def smart_split_text(text: str, max_chars: int = 500) -> List[str]:
                    chunks.append(current_chunk[:split_point+1].strip())
                    current_chunk = current_chunk[split_point+1:]
                 else: 
-                   # Hard split if no spaces found (rare)
+                   # Hard split if absolutely no break points found
                    chunks.append(current_chunk[:max_chars].strip())
                    current_chunk = current_chunk[max_chars:]
 
@@ -328,26 +364,17 @@ async def save_voice(
         
         if transcript:
              print(f"Creating profile for {name} with transcript...")
-             ref_text = transcript
-             audio_io = io.BytesIO(file.file.read()) # Read file again since cursor is at end
-             file.file.seek(0)
-             audio, sr = librosa.load(audio_io, sr=16000, mono=True)
-             ref_audio = [(audio.astype(np.float32), 16000)]
-             
-             voice_prompt_items = manager.get_model().create_voice_clone_prompt(
-                 ref_audio=ref_audio,
-                 ref_text=ref_text
+             voice_prompt_items = await _create_voice_profile(
+                 manager.get_model(), 
+                 file_content, 
+                 transcript
              )
         else:
              print(f"Creating x-vector profile for {name}...")
-             audio_io = io.BytesIO(file.file.read())
-             file.file.seek(0)
-             audio, sr = librosa.load(audio_io, sr=16000, mono=True)
-             ref_audio = [(audio.astype(np.float32), 16000)]
-             
-             voice_prompt_items = manager.get_model().create_voice_clone_prompt(
-                 ref_audio=ref_audio,
-                 x_vector_only_mode=True
+             voice_prompt_items = await _create_voice_profile(
+                 manager.get_model(), 
+                 file_content, 
+                 None
              )
         
         # Save embedding
@@ -445,6 +472,53 @@ async def _load_audio_for_prompt(audio_bytes: bytes) -> list:
     return [(audio.astype(np.float32), 16000)]
 
 
+
+async def _resolve_voice_model(manager: ModelManager, voice_id: Optional[str], audio_file: Optional[UploadFile], transcript: str, use_transcript: bool) -> Tuple[Any, str]:
+    """
+    Determines the voice model prompt to use based on inputs (Saved Voice ID vs Uploaded File).
+    Returns (voice_prompt, mode_description).
+    """
+    if voice_id:
+        # CASE 1: Use Saved Voice
+        conn = get_db()
+        voice = conn.execute('SELECT * FROM voices WHERE id = ?', (voice_id,)).fetchone()
+        conn.close()
+        
+        if not voice:
+            raise ValueError("Voice not found")
+        
+        # Check for cached embedding
+        embedding_path = os.path.join(VOICES_DIR, f"{voice_id}.pt")
+        if os.path.exists(embedding_path):
+            print(f"Loading cached embedding for voice {voice_id}")
+            return torch.load(embedding_path), "saved voice (cached)"
+            
+        # Compute from stored audio file
+        audio_path = os.path.join(VOICES_DIR, voice['filename'])
+        if not os.path.exists(audio_path):
+            raise ValueError("Voice audio file missing")
+            
+        with open(audio_path, "rb") as f:
+            audio_bytes = f.read()
+
+        # Use stored transcript if available
+        final_transcript = voice['transcript'] if voice['transcript'] else None
+        
+        prompt = await _create_voice_profile(manager.get_model(), audio_bytes, final_transcript)
+        return prompt, "saved voice"
+
+    elif audio_file:
+        # CASE 2: Use Uploaded File
+        audio_bytes = await audio_file.read()
+        final_transcript = transcript if (use_transcript and transcript.strip()) else None
+        
+        prompt = await _create_voice_profile(manager.get_model(), audio_bytes, final_transcript)
+        mode = "transcript mode" if final_transcript else "x-vector mode"
+        return prompt, mode
+
+    else:
+        raise ValueError("No voice provided (ID or File required)")
+
 async def generate_with_progress(prompt, voice_id, audio_file, reference_text, use_transcript, temperature=0.8, top_p=0.8, top_k=50, repetition_penalty=1.1):
     """Generator that yields SSE progress events during voice generation."""
     
@@ -454,100 +528,31 @@ async def generate_with_progress(prompt, voice_id, audio_file, reference_text, u
     yield send_event("progress", {"stage": "init", "percent": 0, "message": "Initializing generation..."})
         
     try:
-        # Stage 1: Loading/Processing Voice
-        mode = "unknown"
-        voice_prompt = None
+        # Stage 1: Load/Create Voice Prompt
+        yield send_event("progress", {"stage": "analyzing", "percent": 10, "message": "Analyzing voice characteristics..."})
         
-        if voice_id:
-           # ... (existing voice loading logic) ...
-           conn = get_db() # Changed from get_db_connection() to get_db() to match existing code
-           voice = conn.execute('SELECT * FROM voices WHERE id = ?', (voice_id,)).fetchone()
-           conn.close()
-           
-           if not voice:
-              yield send_event("error", {"message": "Voice not found"})
-              return
-           
-           mode = "saved voice"
-           # Check if we have a pre-computed embedding
-           embedding_path = os.path.join(VOICES_DIR, f"{voice_id}.pt") # Changed from Saved_Voices_Dir to VOICES_DIR
-           
-           if os.path.exists(embedding_path):
-               print(f"Loading cached embedding for voice {voice_id}")
-               voice_prompt = torch.load(embedding_path)
-               mode = "saved voice (cached)"
-           else:
-               # Fallback to computing from audio
-               audio_path = os.path.join(VOICES_DIR, voice['filename']) # Changed from Saved_Voices_Dir to VOICES_DIR
-               if not os.path.exists(audio_path):
-                   yield send_event("error", {"message": "Voice audio file missing"})
-                   return
-               
-               yield send_event("progress", {"stage": "analyzing", "percent": 20, "message": "Analyzing voice characteristics..."})
-               
-               # Load audio
-               with open(audio_path, "rb") as f:
-                   audio_bytes = f.read()
-               ref_audio = await _load_audio_for_prompt(audio_bytes)
-               
-               if voice['transcript']:
-                   voice_prompt = manager.get_model().create_voice_clone_prompt(
-                       ref_audio=ref_audio,
-                       ref_text=voice['transcript']
-                   )
-               else:
-                   voice_prompt = manager.get_model().create_voice_clone_prompt(
-                       ref_audio=ref_audio,
-                       x_vector_only_mode=True
-                   )
+        voice_prompt, mode = await _resolve_voice_model(
+            manager, voice_id, audio_file, reference_text, use_transcript
+        )
         
-        else:
-             # Uploaded file logic
-             if not audio_file:
-                 yield send_event("error", {"message": "No voice provided"})
-                 return
-             
-             yield send_event("progress", {"stage": "analyzing", "percent": 20, "message": "Processing uploaded audio..."})
-             audio_bytes = await audio_file.read()
-             
-             # Prepare prompt
-             should_use_transcript = use_transcript
-             ref_text_to_use = reference_text
-             
-             ref_audio = await _load_audio_for_prompt(audio_bytes)
-             
-             if should_use_transcript and ref_text_to_use.strip():
-                voice_prompt = manager.get_model().create_voice_clone_prompt(
-                    ref_audio=ref_audio,
-                    ref_text=ref_text_to_use.strip()
-                )
-                mode = "transcript mode"
-             else:
-                voice_prompt = manager.get_model().create_voice_clone_prompt(
-                    ref_audio=ref_audio,
-                    x_vector_only_mode=True
-                )
-                mode = "x-vector mode"
-        
-        yield send_event("progress", {"stage": "extracted", "percent": 40, "message": f"Voice profile created ({mode})"})
+        yield send_event("progress", {"stage": "extracted", "percent": 30, "message": f"Voice profile ready ({mode})"})
         await asyncio.sleep(0.1)
         
-        # Stage 3: Generating speech (the long part)
-        yield send_event("progress", {"stage": "generating", "percent": 50, "message": "Generating speech..."})
+        # Stage 2: Generate Speech
+        yield send_event("progress", {"stage": "generating", "percent": 40, "message": "Generating speech components..."})
         
-        print(f"Generating for prompt: '{prompt[:50]}...' Temp: {temperature}")
         text_chunks = smart_split_text(prompt)
-        print(f"Split into {len(text_chunks)} chunks")
+        print(f"Generating '{prompt[:30]}...' in {len(text_chunks)} chunks (Temp: {temperature})")
         
-        start_time = time.time()
         all_wavs = []
         output_sr = 24000
         loop = asyncio.get_event_loop()
+        start_time = time.time()
 
-        total_chunks = len(text_chunks)
         for i, chunk in enumerate(text_chunks):
-            chunk_progress = 50 + int((i / total_chunks) * 40) # 50% to 90%
-            yield send_event("progress", {"stage": "generating", "percent": chunk_progress, "message": f"Generating part {i+1}/{total_chunks}..."})
+            # Calculate progress: 40% -> 90%
+            chunk_progress = 40 + int((i / len(text_chunks)) * 50)
+            yield send_event("progress", {"stage": "generating", "percent": chunk_progress, "message": f"Generating part {i+1}/{len(text_chunks)}..."})
             
             wavs, sr = await loop.run_in_executor(
                 None,
@@ -565,37 +570,26 @@ async def generate_with_progress(prompt, voice_id, audio_file, reference_text, u
             output_sr = sr
 
         gen_time = time.time() - start_time
-        print(f"Generation completed in {gen_time:.1f}s")
+        yield send_event("progress", {"stage": "generated", "percent": 90, "message": f"Generated in {gen_time:.1f}s"})
         
-        yield send_event("progress", {"stage": "generated", "percent": 90, "message": f"Speech generated in {gen_time:.1f}s"})
-        await asyncio.sleep(0.1)
+        # Stage 3: Encode Output
+        yield send_event("progress", {"stage": "encoding", "percent": 95, "message": "Finalizing audio..."})
         
-        # Stage 4: Encoding output
-        yield send_event("progress", {"stage": "encoding", "percent": 95, "message": "Encoding audio file..."})
-        await asyncio.sleep(0.1)
-        
-        # Concatenate chunks
         combined_wav = np.concatenate(all_wavs)
-        
-        # Convert to WAV bytes
         audio_buffer = io.BytesIO()
         sf.write(audio_buffer, combined_wav, output_sr, format='WAV')
         audio_buffer.seek(0)
-        audio_data = audio_buffer.read()
         
-        # Base64 encode for SSE transport
-        import base64
-        audio_b64 = base64.b64encode(audio_data).decode('utf-8')
+        audio_b64 = base64.b64encode(audio_buffer.read()).decode('utf-8')
         
         yield send_event("progress", {"stage": "complete", "percent": 100, "message": "Done!"})
         yield send_event("complete", {"audio": audio_b64, "format": "wav"})
         
-        print(f"[OK] Voice generated successfully using {mode}!")
+        print(f"[OK] Generation complete ({mode})")
         
     except Exception as e:
         print(f"Error generating voice: {e}")
         yield send_event("error", {"message": str(e)})
-
 
 @app.post("/api/generate-stream")
 async def generate_voice_stream(
@@ -660,31 +654,20 @@ async def generate_voice(
              should_use_transcript = use_transcript.lower() == "true"
              ref_text_to_use = reference_text
         
-        # Load audio with librosa
-        audio_io = io.BytesIO(audio_bytes)
-        try:
-            audio, sr = librosa.load(audio_io, sr=16000, mono=True)
-        except Exception as e:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Failed to load audio file: {str(e)}"
-            )
-        
-        audio = audio.astype(np.float32)
-        ref_audio = [(audio, 16000)]
-        
         if should_use_transcript and ref_text_to_use.strip():
             print(f"Generating voice with transcript: '{ref_text_to_use[:50]}...'")
-            voice_prompt = manager.get_model().create_voice_clone_prompt(
-                ref_audio=ref_audio,
-                ref_text=ref_text_to_use.strip()
+            voice_prompt = await _create_voice_profile(
+                manager.get_model(),
+                audio_bytes,
+                ref_text_to_use.strip()
             )
             mode = "transcript mode"
         else:
             print("Generating voice in x-vector mode")
-            voice_prompt = manager.get_model().create_voice_clone_prompt(
-                ref_audio=ref_audio,
-                x_vector_only_mode=True
+            voice_prompt = await _create_voice_profile(
+                 manager.get_model(),
+                 audio_bytes,
+                 None
             )
             mode = "x-vector mode"
         
