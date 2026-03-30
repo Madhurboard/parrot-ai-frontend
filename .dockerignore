@@ -1,0 +1,10 @@
+.git
+.gitignore
+*.md
+website/
+frontend/
+saved_voices/
+.venv/
+.cache/
+__pycache__/
+*.pyc

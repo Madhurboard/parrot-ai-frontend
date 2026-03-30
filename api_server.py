@@ -11,6 +11,7 @@ import time
 import uuid
 import os
 import shutil
+import tempfile
 import re
 import gc
 import asyncio
@@ -30,16 +31,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
 
-from qwen_tts import Qwen3TTSModel, VoiceClonePromptItem
+import qwen_engine as qwen_tts
+from qwen_engine import VoiceClonePromptItem
 
 # ============================================================================
 # Configuration
 # ============================================================================
 
 MODEL_MAP = {
-    "base": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
-    "design": "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
-    "custom": "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
+    "base": "./model_cache/Qwen3-TTS-1.7B-Base",
+    "design": "./model_cache/Qwen3-TTS-1.7B-VoiceDesign",
+    "custom": "./model_cache/Qwen3-TTS-1.7B-CustomVoice"
 }
 
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -92,9 +94,9 @@ class ModelManager:
         # 2. Load new model
         try:
             print(f"[ModelManager] Loading {MODEL_MAP[model_type]} on {DEVICE}...")
-            self.model = Qwen3TTSModel.from_pretrained(
+            self.model = qwen_tts.Qwen3TTSModel.from_pretrained(
                 MODEL_MAP[model_type],
-                device_map=DEVICE,
+                device="cuda",
                 dtype=DTYPE
             )
             self.model_type = model_type
@@ -176,14 +178,29 @@ print("[OK] Whisper loaded successfully!")
 # ============================================================================
 
 async def _load_audio_bytes(audio_bytes: bytes) -> Tuple[np.ndarray, int]:
-    """Helper to load audio bytes into numpy array."""
-    audio_io = io.BytesIO(audio_bytes)
-    # Run librosa in executor to avoid blocking main thread
-    loop = asyncio.get_event_loop()
-    audio, sr = await loop.run_in_executor(None, lambda: librosa.load(audio_io, sr=16000, mono=True))
-    return audio.astype(np.float32), 16000
+    """Helper to load audio bytes into numpy array using a temporary file for format detection."""
+    # Use tempfile to handle compressed formats (WebM/OGG) which librosa can't 
+    # always handle from BytesIO without a specific header.
+    with tempfile.NamedTemporaryFile(suffix=".tmp", delete=False) as tmp:
+        tmp.write(audio_bytes)
+        tmp_path = tmp.name
+        
+    try:
+        # Run whisper.load_audio in executor (blocks but it's okay in executor)
+        loop = asyncio.get_event_loop()
+        # whisper.load_audio is very robust as it uses ffmpeg under the hood
+        audio = await loop.run_in_executor(None, lambda: whisper.load_audio(tmp_path))
+        return audio.astype(np.float32), 16000
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
-async def _create_voice_profile(model: Qwen3TTSModel, audio_bytes: bytes, transcript: Optional[str] = None) -> Any:
+async def _load_audio_for_prompt(audio_bytes: bytes) -> list:
+    """Helper to load audio bytes into format expected by generate_with_progress."""
+    audio, sr = await _load_audio_bytes(audio_bytes)
+    return [(audio, sr)]
+
+async def _create_voice_profile(model: qwen_tts.Qwen3TTSModel, audio_bytes: bytes, transcript: Optional[str] = None) -> Any:
     """
     Unified helper to create a voice profile from audio bytes.
     Handles both transcript-based and x-vector extraction.
@@ -198,11 +215,28 @@ async def _create_voice_profile(model: Qwen3TTSModel, audio_bytes: bytes, transc
             ref_text=transcript.strip()
         )
     else:
-        # X-vector only mode (faster, no transcript needed)
+        # X-vector mode (no transcript)
         return model.create_voice_clone_prompt(
             ref_audio=ref_audio,
-            x_vector_only_mode=True
+            ref_text=None
         )
+
+def _normalize_audio(audio: np.ndarray) -> np.ndarray:
+    """Standardize audio: flatten, normalize to -1.0dB peak, and clamp to [-1, 1]."""
+    # 1. Ensure 1D array
+    audio = audio.flatten()
+    
+    # 2. Avoid division by zero for silent signals
+    max_val = np.abs(audio).max()
+    if max_val > 0:
+        # Normalize to target peak of 0.9 (approx -1dB)
+        audio = audio * (0.9 / max_val)
+        
+    # 3. Final safety clamp
+    audio = np.clip(audio, -1.0, 1.0)
+    
+    print(f"[Audio Monitor] Peak Absolute Amplitude: {max_val:.4f} -> Normalized")
+    return audio.astype(np.float32)
 
 def smart_split_text(text: str, max_chars: int = 500) -> List[str]:
     """
@@ -463,13 +497,7 @@ async def get_audio_data(voice_id: Optional[str], audio_file: Optional[UploadFil
     return audio_bytes, reference_text, bool(reference_text)
 
 
-async def _load_audio_for_prompt(audio_bytes: bytes) -> list:
-    """Helper to load audio bytes into format expected by create_voice_clone_prompt."""
-    audio_io = io.BytesIO(audio_bytes)
-    # Run librosa in thread pool to avoid blocking event loop
-    loop = asyncio.get_event_loop()
-    audio, sr = await loop.run_in_executor(None, lambda: librosa.load(audio_io, sr=16000, mono=True))
-    return [(audio.astype(np.float32), 16000)]
+# Legacy helper removed (consolidated at top of file)
 
 
 
@@ -491,7 +519,7 @@ async def _resolve_voice_model(manager: ModelManager, voice_id: Optional[str], a
         embedding_path = os.path.join(VOICES_DIR, f"{voice_id}.pt")
         if os.path.exists(embedding_path):
             print(f"Loading cached embedding for voice {voice_id}")
-            return torch.load(embedding_path), "saved voice (cached)"
+            return torch.load(embedding_path, weights_only=False), "saved voice (cached)"
             
         # Compute from stored audio file
         audio_path = os.path.join(VOICES_DIR, voice['filename'])
@@ -575,7 +603,9 @@ async def generate_with_progress(prompt, voice_id, audio_file, reference_text, u
         # Stage 3: Encode Output
         yield send_event("progress", {"stage": "encoding", "percent": 95, "message": "Finalizing audio..."})
         
-        combined_wav = np.concatenate(all_wavs)
+        combined_wav = np.concatenate([w.flatten() for w in all_wavs])
+        combined_wav = _normalize_audio(combined_wav)
+        
         audio_buffer = io.BytesIO()
         sf.write(audio_buffer, combined_wav, output_sr, format='WAV')
         audio_buffer.seek(0)
@@ -766,8 +796,9 @@ async def generate_design(
             all_wavs.append(wavs[0])
             output_sr = sr
             
-        # Concatenate all chunks
-        combined_wav = np.concatenate(all_wavs)
+        # Concatenate and Normalize
+        combined_wav = np.concatenate([w.flatten() for w in all_wavs])
+        combined_wav = _normalize_audio(combined_wav)
         
         audio_buffer = io.BytesIO()
         sf.write(audio_buffer, combined_wav, output_sr, format='WAV')
@@ -823,7 +854,9 @@ async def generate_preset(
             all_wavs.append(wavs[0])
             output_sr = sr
             
-        combined_wav = np.concatenate(all_wavs)
+        # Concatenate and Normalize
+        combined_wav = np.concatenate([w.flatten() for w in all_wavs])
+        combined_wav = _normalize_audio(combined_wav)
         
         audio_buffer = io.BytesIO()
         sf.write(audio_buffer, combined_wav, output_sr, format='WAV')
@@ -921,7 +954,7 @@ async def generate_dialogue(request: DialogueRequest):
              embedding_path = os.path.join(VOICES_DIR, f"{voice_id}.pt")
              
              if os.path.exists(embedding_path):
-                 voice_prompt = torch.load(embedding_path)
+                 voice_prompt = torch.load(embedding_path, weights_only=True)
              else:
                  # Fallback: Load from DB and compute
                  conn = get_db()
