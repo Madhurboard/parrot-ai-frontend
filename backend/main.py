@@ -21,6 +21,7 @@ import gc
 import asyncio
 import base64
 import tempfile
+import threading
 from typing import AsyncGenerator, Optional, List, Tuple, Dict, Any
 
 import torch
@@ -34,7 +35,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
 
-import qwen_engine as qwen_tts
+import qwen_engine as engine_wrapper
+from qwen_tts.inference.qwen3_tts_model import VoiceClonePromptItem
 
 from backend.config import (
     MODEL_MAP, DEVICE, DTYPE, FRONTEND_URLS, CLOUD_SPACE_ID,
@@ -56,11 +58,12 @@ class ModelManager:
     _instance = None
 
     def __init__(self):
-        self.local_model: Optional[qwen_tts.Qwen3TTSModel] = None
-        self.cloud_client: Optional[Any] = None
+        # Cache for loaded models: {model_type: model_instance}
+        self.model_cache: Dict[str, qwen_tts.Qwen3TTSModel] = {}
         self.model_type: Optional[str] = None
         self.is_loading: bool = False
-        self.use_cloud: bool = False # Current active tier
+        self.use_cloud: bool = False 
+        self._lock = threading.Lock()
 
     @classmethod
     def get_instance(cls) -> "ModelManager":
@@ -69,48 +72,58 @@ class ModelManager:
         return cls._instance
 
     def load_model(self, model_type: str) -> None:
-        """Attempt to load the local model. On failure, toggle cloud mode."""
-        if self.model_type == model_type and self.local_model is not None:
-            return
+        """Load model into cache if not present, then set as active. Thread-safe."""
+        with self._lock:
+            if self.model_type == model_type and model_type in self.model_cache:
+                return
 
-        if model_type not in MODEL_MAP:
-            raise ValueError(f"Unknown model type: {model_type}")
+            if model_type not in MODEL_MAP:
+                raise ValueError(f"Unknown model type: {model_type}")
 
-        self.is_loading = True
-        self.use_cloud = False
-        print(f"[ModelManager] Attempting to load LOCAL engine: {MODEL_MAP[model_type]}...")
+            self.is_loading = True
+            self.use_cloud = False
+            
+            # Check if already cached
+            if model_type in self.model_cache:
+                print(f"[ModelManager] Switching to cached model: {model_type}")
+                self.model_type = model_type
+                self.is_loading = False
+                return
 
-        try:
-            # Unload old
-            if self.local_model:
-                del self.local_model
-                self.local_model = None
-                gc.collect()
+            print(f"[ModelManager] Loading NEW engine: {model_type}...")
+            try:
+                # If we have too many models, clear the oldest one to save VRAM
+                if len(self.model_cache) >= 2:
+                    oldest = next(iter(self.model_cache))
+                    print(f"[ModelManager] VRAM management: Unloading {oldest}")
+                    del self.model_cache[oldest]
+                    gc.collect()
+                    torch.cuda.empty_cache()
 
-            self.local_model = qwen_tts.Qwen3TTSModel.from_pretrained(
-                MODEL_MAP[model_type],
-                device="cuda",
-                dtype=DTYPE,
-            )
-            self.model_type = model_type
-            print(f"[ModelManager] LOCAL engine active on {DEVICE}.")
-        except Exception as e:
-            self.is_loading = False
-            raise RuntimeError(f"Model load failed: {e}")
-        finally:
-            self.is_loading = False
+                new_model = engine_wrapper.Qwen3TTSModel.from_pretrained(
+                    MODEL_MAP[model_type],
+                    device="cuda",
+                    dtype=DTYPE,
+                )
+                self.model_cache[model_type] = new_model
+                self.model_type = model_type
+                print(f"[ModelManager] {model_type} active on {DEVICE}.")
+            except Exception as e:
+                self.is_loading = False
+                raise RuntimeError(f"Model load failed: {e}")
+            finally:
+                self.is_loading = False
 
     def get_engine(self):
-        """Returns the active generator (local model or cloud client)."""
-        if not self.local_model and not self.use_cloud:
-            self.load_model("base")
+        """Returns the active engine from cache."""
+        if self.model_type not in self.model_cache:
+            self.load_model(self.model_type or "base")
         
         if self.use_cloud:
             raise RuntimeError("Cloud model is not implemented.")
-        return self.local_model
+        return self.model_cache[self.model_type]
 
     def get_model(self):
-        """Alias for get_engine to maintain compatibility."""
         return self.get_engine()
 
 # Initialise singleton
@@ -118,12 +131,18 @@ manager = ModelManager.get_instance()
 
 
 # ============================================================================
-# Whisper (transcription)
+# Whisper (Lazy Loading)
 # ============================================================================
 
-print("[Parrot AI] Loading Whisper model...")
-whisper_model = whisper.load_model("base", device=DEVICE)
-print("[OK] Whisper loaded successfully!")
+_whisper_model = None
+
+def get_whisper():
+    global _whisper_model
+    if _whisper_model is None:
+        print("[SYSTEM] Initializing transcription engine (Whisper)...")
+        _whisper_model = whisper.load_model("base", device=DEVICE)
+        print("[OK] Transcription engine ready.")
+    return _whisper_model
 
 
 # ============================================================================
@@ -308,7 +327,7 @@ async def api_save_voice(
 
         # 2. Generate embedding
         voice_prompt = await _create_voice_profile(
-            manager.get_engine(), file_content, transcript or None
+            engine_wrapper.get_engine(), file_content, transcript or None
         )
 
         # 3. Serialise embedding and upload
@@ -363,6 +382,29 @@ async def api_delete_voice(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.patch("/api/voices/{voice_id}/rename")
+async def api_rename_voice(
+    voice_id: str,
+    payload: dict,
+    user_id: str = Depends(get_current_user),
+):
+    try:
+        new_name = payload.get("name")
+        if not new_name:
+            raise HTTPException(status_code=400, detail="Name required")
+        
+        from backend.supabase_client import update_voice_name
+        success = update_voice_name(voice_id, user_id, new_name)
+        if not success:
+            raise HTTPException(status_code=404, detail="Voice not found")
+            
+        return {"message": "Voice renamed successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ============================================================================
 # Voice Resolution Helpers
 # ============================================================================
@@ -407,19 +449,41 @@ async def _resolve_voice_prompt(
         
         prompt = torch.load(local_path, map_location=DEVICE, weights_only=False)
         
-        # Diagnostic logging for prompt structure
-        print(f"[DEBUG] Loaded prompt type: {type(prompt)}")
-        if isinstance(prompt, dict):
-            print(f"[DEBUG] Prompt keys: {list(prompt.keys())}")
-            # Map legacy keys if needed
-            if "spk_emb" in prompt and "ref_spk_embedding" not in prompt:
-                print("[DEBUG] Mapping legacy 'spk_emb' to 'ref_spk_embedding'")
-                prompt["ref_spk_embedding"] = prompt.pop("spk_emb")
-            if "icl_mode" not in prompt:
-                prompt["icl_mode"] = True
-            if "x_vector_only_mode" not in prompt:
-                prompt["x_vector_only_mode"] = False
-        
+        # ── PERMANENT REPAIR LOGIC ──
+        # If the loaded prompt is 'dirty' (contains raw audio), we fix it once and save it back.
+        is_dirty = False
+        if isinstance(prompt, dict) and "audio_values" in prompt:
+            is_dirty = True
+        elif isinstance(prompt, VoiceClonePromptItem) and prompt.ref_spk_embedding is not None:
+             # Legacy check for wrongly mapped raw audio in embedding field
+             if isinstance(prompt.ref_spk_embedding, torch.Tensor) and prompt.ref_spk_embedding.numel() > 4096:
+                 is_dirty = True
+
+        if is_dirty:
+            print(f"[REPAIR] Fixing legacy voice asset permanently: {voice_id}")
+            try:
+                # 1. Download raw audio
+                raw_data = download_from_storage(VOICE_AUDIO_BUCKET, voice["audio_path"])
+                if raw_data:
+                    # 2. Extract clean embedding
+                    clean_prompt = await _create_voice_profile(
+                        manager.get_engine(), raw_data, voice.get("transcript")
+                    )
+                    
+                    # 3. Save optimized embedding to buffer
+                    emb_buffer = io.BytesIO()
+                    torch.save(clean_prompt, emb_buffer)
+                    emb_buffer.seek(0)
+                    
+                    # 4. Upload back to Supabase (Overwrite)
+                    upload_to_storage(VOICE_EMBEDDING_BUCKET, voice["embedding_path"], emb_buffer.read(), upsert=True)
+                    print(f"[SUCCESS] Voice {voice_id} repaired and optimized in cloud.")
+                    
+                    # Use the clean prompt for current generation
+                    prompt = clean_prompt
+            except Exception as repair_err:
+                print(f"[REPAIR FAILED] Could not auto-fix asset: {repair_err}")
+
         return prompt, "saved voice"
 
     elif audio_content:
@@ -794,43 +858,65 @@ async def generate_dialogue(
     all_audio: list = []
     output_sr = 24000
     silence = np.zeros(int(output_sr * 0.3))
+    
+    # Cache resolved prompts to prevent redundant OOM-heavy repairs
+    prompt_cache: Dict[str, Any] = {}
 
-    for i, line in enumerate(request.lines):
-        needed = "custom" if line.type == "preset" else "base"
-        if manager.model_type != needed:
-            await loop.run_in_executor(None, lambda: manager.load_model(needed))
+    try:
+        for i, line in enumerate(request.lines):
+            needed = "custom" if line.type == "preset" else "base"
+            if manager.model_type != needed:
+                print(f"[Dialogue] Switching engine: {manager.model_type} -> {needed}")
+                await loop.run_in_executor(None, lambda: manager.load_model(needed))
 
-        wavs = None
+            wavs = None
+            
+            # Use torch.inference_mode for memory efficiency
+            with torch.inference_mode():
+                if line.type == "preset":
+                    wavs, sr = await loop.run_in_executor(
+                        None,
+                        lambda l=line: manager.get_model().generate_custom_voice(
+                            text=l.text, speaker=l.speaker, language="Auto",
+                            temperature=l.temperature, top_p=l.top_p,
+                            top_k=l.top_k, repetition_penalty=l.repetition_penalty,
+                        ),
+                    )
+                    output_sr = sr
+                else:
+                    # Resolve or fetch from cache
+                    if line.speaker in prompt_cache:
+                        voice_prompt = prompt_cache[line.speaker]
+                    else:
+                        print(f"[Dialogue] Resolving voice: {line.speaker}")
+                        voice_prompt, _ = await _resolve_voice_prompt(
+                            line.speaker, None, "", False, user_id,
+                        )
+                        prompt_cache[line.speaker] = voice_prompt
 
-        if line.type == "preset":
-            wavs, sr = await loop.run_in_executor(
-                None,
-                lambda l=line: manager.get_model().generate_custom_voice(
-                    text=l.text, speaker=l.speaker, language="Auto",
-                    temperature=l.temperature, top_p=l.top_p,
-                    top_k=l.top_k, repetition_penalty=l.repetition_penalty,
-                ),
-            )
-            output_sr = sr
-        else:
-            voice_prompt, _ = await _resolve_voice_prompt(
-                line.speaker, None, "", False, user_id,
-            )
-            wavs, sr = await loop.run_in_executor(
-                None,
-                lambda l=line: manager.get_model().generate_voice_clone(
-                    text=l.text, language="Auto",
-                    voice_clone_prompt=voice_prompt,
-                    temperature=l.temperature, top_p=l.top_p,
-                    top_k=l.top_k, repetition_penalty=l.repetition_penalty,
-                ),
-            )
-            output_sr = sr
+                    wavs, sr = await loop.run_in_executor(
+                        None,
+                        lambda l=line: manager.get_model().generate_voice_clone(
+                            text=l.text, language="Auto",
+                            voice_clone_prompt=voice_prompt,
+                            temperature=l.temperature, top_p=l.top_p,
+                            top_k=l.top_k, repetition_penalty=l.repetition_penalty,
+                        ),
+                    )
+                    output_sr = sr
 
-        if wavs is not None:
-            all_audio.append(wavs[0])
-            if i < len(request.lines) - 1:
-                all_audio.append(silence)
+            if wavs is not None:
+                all_audio.append(wavs[0])
+                if i < len(request.lines) - 1:
+                    all_audio.append(silence)
+            
+            # Explicitly clear VRAM after each segment
+            del wavs
+            gc.collect()
+            torch.cuda.empty_cache()
+    except Exception as e:
+        print(f"[ERROR] Dialogue generation interrupted: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
     if not all_audio:
         raise HTTPException(status_code=500, detail="No audio generated")
@@ -844,8 +930,24 @@ async def generate_dialogue(
 
 
 # ============================================================================
-# Entrypoint
+# Background Startup & Warmup
 # ============================================================================
+
+def warmup_engines():
+    """Warms up the most common models in the background."""
+    print("[SYSTEM] Background warmup initiated...")
+    try:
+        m = ModelManager.get_instance()
+        m.load_model("base")
+        print("[SYSTEM] Warmup complete. Synthesis engine is HOT.")
+    except Exception as e:
+        print(f"[SYSTEM] Warmup skipped: {e}")
+
+@app.on_event("startup")
+async def startup_event():
+    # Start warmup in a separate thread so FastAPI can finish starting up
+    threading.Thread(target=warmup_engines, daemon=True).start()
+    print("[SYSTEM] Parrot AI Studio is ONLINE.")
 
 if __name__ == "__main__":
     import uvicorn

@@ -101,6 +101,15 @@ def delete_voice_record(voice_id: str, user_id: str) -> bool:
     return bool(result.data)
 
 
+def update_voice_name(voice_id: str, user_id: str, new_name: str) -> bool:
+    """Update the display name of a voice record."""
+    sb = get_supabase()
+    result = sb.table("voices").update({"name": new_name}).eq(
+        "id", voice_id
+    ).eq("user_id", user_id).execute()
+    return bool(result.data)
+
+
 def update_voice_embedding(voice_id: str, embedding_path: str) -> None:
     """Set the embedding_path column after the .pt file has been uploaded."""
     sb = get_supabase()
@@ -114,13 +123,13 @@ def update_voice_embedding(voice_id: str, embedding_path: str) -> None:
 # ============================================================================
 
 
-def upload_to_storage(bucket: str, remote_path: str, data: bytes, content_type: str = "application/octet-stream") -> str:
+def upload_to_storage(bucket: str, remote_path: str, data: bytes, content_type: str = "application/octet-stream", upsert: bool = False) -> str:
     """Upload binary data to a Supabase Storage bucket. Returns the remote path."""
     sb = get_supabase()
     sb.storage.from_(bucket).upload(
         remote_path,
         data,
-        file_options={"content-type": content_type},
+        file_options={"content-type": content_type, "upsert": "true" if upsert else "false"},
     )
     return remote_path
 

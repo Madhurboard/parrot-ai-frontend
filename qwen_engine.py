@@ -1,6 +1,7 @@
 import torch
 import os
 import io
+import gc
 import numpy as np
 import librosa
 from typing import List, Tuple, Optional, Any
@@ -80,28 +81,57 @@ class Qwen3TTSModel:
                         vals = item.get('audio_values')
                         # If audio_values is a long sequence (raw audio), it's NOT an embedding
                         if isinstance(vals, torch.Tensor) and vals.numel() > 4096:
-                            print(f"[DEBUG] Detected raw audio in audio_values (size {vals.numel()}). Needs encoding.")
-                            # Attempt to extract speaker embedding using the model's encoder
+                            print(f"[DEBUG] Detected raw audio in audio_values (size {vals.numel()}). Re-extracting via official method...")
+                            import tempfile
+                            import soundfile as sf
+                            
                             try:
-                                if hasattr(self.official_model, 'speaker_encoder'):
-                                    print("[DEBUG] Using model.speaker_encoder to extract x-vector...")
-                                    with torch.no_grad():
-                                        # ECAPA-TDNN usually takes (batch, samples)
-                                        # Ensure it's on the right device and dtype
-                                        audio_input = vals.to(device=target_device, dtype=torch.float32).view(1, -1)
-                                        spk_emb = self.official_model.speaker_encoder(audio_input)
-                                        item['ref_spk_embedding'] = spk_emb
-                                elif hasattr(self.official_model, 'model') and hasattr(self.official_model.model, 'speaker_encoder'):
-                                    print("[DEBUG] Using model.model.speaker_encoder to extract x-vector...")
-                                    with torch.no_grad():
-                                        audio_input = vals.to(device=target_device, dtype=torch.float32).view(1, -1)
-                                        spk_emb = self.official_model.model.speaker_encoder(audio_input)
-                                        item['ref_spk_embedding'] = spk_emb
-                                else:
-                                    print("[WARNING] Could not find speaker_encoder. Model may fail.")
-                                    # Fallback: if it's already mapped to ref_spk_embedding, we might have a problem
+                                # Save to temp file and use official prompt creator
+                                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
+                                    audio_np = vals.cpu().float().numpy().flatten()
+                                    sf.write(tf.name, audio_np, 16000)
+                                    temp_path = tf.name
+                                
+                                try:
+                                    # Pre-emptive clear for re-extraction
+                                    torch.cuda.empty_cache()
+                                    
+                                    # Create a clean prompt using official logic
+                                    ref_text = item.get('ref_text') or ""
+                                    x_vec_mode = True if not ref_text.strip() else item.get('x_vector_only_mode', True)
+                                    
+                                    # Use autocast to prevent Half/Float mismatch during official re-extraction
+                                    with torch.amp.autocast(device_type="cuda", dtype=torch.float16 if torch.cuda.is_available() else torch.float32):
+                                        result = self.official_model.create_voice_clone_prompt(
+                                            ref_audio=temp_path,
+                                            ref_text=ref_text,
+                                            x_vector_only_mode=x_vec_mode
+                                        )
+                                    
+                                    # Handle case where official library returns a list
+                                    clean_item = result[0] if isinstance(result, list) and len(result) > 0 else result
+                                    
+                                    # Update our item with the generated fields from the clean item
+                                    for field_name in ['ref_spk_embedding', 'ref_code', 'ref_text', 'x_vector_only_mode', 'icl_mode']:
+                                        if hasattr(clean_item, field_name):
+                                            val = getattr(clean_item, field_name)
+                                            if val is not None:
+                                                item[field_name] = val
+                                    
+                                    print(f"[REPAIR] Asset optimized for high-speed synthesis.")
+                                    
+                                    # Post-repair clear
+                                    torch.cuda.empty_cache()
+                                    gc.collect()
+                                    
+                                except Exception as e:
+                                    print(f"[ERROR] Re-extraction via official method failed: {e}")
+                                finally:
+                                    if os.path.exists(temp_path):
+                                        os.unlink(temp_path)
                             except Exception as e:
-                                print(f"[ERROR] Speaker encoding failed: {e}")
+                                print(f"[ERROR] Re-extraction via official method failed: {e}")
+                                # Fallback to manual if possible, but the above is safer
                         
                         # Remove audio_values as it's not a field in VoiceClonePromptItem
                         item.pop('audio_values', None)
@@ -114,45 +144,28 @@ class Qwen3TTSModel:
                              # Repeat encoding logic or set to None to let it fail gracefully
                              # (Ideally we repeat the encoding if we can)
                     
-                    item_kwargs = {k: v for k, v in item.items() if k in valid_fields}
+                    # Ensure ALL mandatory fields for VoiceClonePromptItem are present
+                    # This prevents 'missing positional argument' errors in the constructor
+                    mandatory_fields = {
+                        'ref_spk_embedding': None,
+                        'ref_code': None,
+                        'ref_text': '',
+                        'x_vector_only_mode': True,
+                        'icl_mode': False
+                    }
                     
-                    # Set mandatory fields if missing to avoid dataclass init errors
-                    if 'ref_code' not in item_kwargs: item_kwargs['ref_code'] = None
-                    if 'ref_spk_embedding' not in item_kwargs: 
-                        # If we still don't have it, we might be in trouble unless the official model handles it
-                        print("[WARNING] VoiceClonePromptItem missing 'ref_spk_embedding'")
+                    # Filter item for valid VoiceClonePromptItem fields
+                    valid_fields = ['ref_spk_embedding', 'ref_code', 'ref_text', 'x_vector_only_mode', 'icl_mode']
+                    item_kwargs = {k: v for k, v in item.items() if k in valid_fields}
+
+                    for field, default in mandatory_fields.items():
+                        if field not in item_kwargs or item_kwargs[field] is None:
+                            item_kwargs[field] = default
+                    
+                    if item_kwargs['ref_spk_embedding'] is None:
+                        print("[WARNING] VoiceClonePromptItem created without valid embedding.")
 
                     item = VoiceClonePromptItem(**item_kwargs)
-                
-                # Final check for VoiceClonePromptItem consistency
-                if hasattr(item, 'ref_text'):
-                    rt = getattr(item, 'ref_text', None)
-                    print(f"[DEBUG] Item ref_text: '{rt}'")
-                    if not rt or rt == "None":
-                        # Force x_vector_only_mode if ref_text is missing to avoid ICL errors
-                        print("[DEBUG] Forcing x_vector_only_mode=True as ref_text is empty")
-                        if hasattr(item, 'x_vector_only_mode'):
-                            try:
-                                item.x_vector_only_mode = True
-                            except Exception:
-                                pass
-                        if hasattr(item, 'icl_mode'):
-                            try:
-                                item.icl_mode = False
-                            except Exception:
-                                pass
-                    else:
-                        print("[DEBUG] Keeping ICL mode as ref_text is present")
-                        if hasattr(item, 'x_vector_only_mode'):
-                            try:
-                                item.x_vector_only_mode = False
-                            except Exception:
-                                pass
-                        if hasattr(item, 'icl_mode'):
-                            try:
-                                item.icl_mode = True
-                            except Exception:
-                                pass
                 
                 # Move tensors to correct device
                 if hasattr(item, 'ref_spk_embedding') and item.ref_spk_embedding is not None:
