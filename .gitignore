@@ -1,6 +1,6 @@
 # Local Backend (NOT for GitHub)
-backend/
-run.bat
+# backend/
+# run.bat
 tunnel.bat
 voices.db
 saved_voices/
