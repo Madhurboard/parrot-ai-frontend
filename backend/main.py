@@ -35,15 +35,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
 
-import qwen_engine as engine_wrapper
+from . import qwen_engine as engine_wrapper
 from qwen_tts.inference.qwen3_tts_model import VoiceClonePromptItem
 
-from backend.config import (
+from .config import (
     MODEL_MAP, DEVICE, DTYPE, FRONTEND_URLS, CLOUD_SPACE_ID,
     VOICE_AUDIO_BUCKET, VOICE_EMBEDDING_BUCKET, CACHE_DIR,
 )
-from backend.auth import get_current_user
-from backend.supabase_client import (
+from .auth import get_current_user
+from .supabase_client import (
     insert_voice, list_voices, get_voice, delete_voice_record,
     update_voice_embedding,
     upload_to_storage, download_from_storage, delete_from_storage,
@@ -59,7 +59,7 @@ class ModelManager:
 
     def __init__(self):
         # Cache for loaded models: {model_type: model_instance}
-        self.model_cache: Dict[str, qwen_tts.Qwen3TTSModel] = {}
+        self.model_cache: Dict[str, engine_wrapper.Qwen3TTSModel] = {}
         self.model_type: Optional[str] = None
         self.is_loading: bool = False
         self.use_cloud: bool = False 

@@ -75,8 +75,17 @@ requirements.lock.txt
 # Environment-specific
 environment.txt
 
-# Frontend is a separate repo
-frontend/
+# Large Assets
+backend/model_cache/
+backend/outputs/
+
+# Node (Frontend)
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env.local
+frontend/.env.production
+frontend/.env.development
 
 # Local Database & Storage
 voices.db

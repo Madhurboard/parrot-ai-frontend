@@ -7,7 +7,7 @@ from fastapi import Request, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 
-from backend.config import SUPABASE_JWT_SECRET
+from .config import SUPABASE_JWT_SECRET
 
 _bearer_scheme = HTTPBearer()
 
@@ -18,7 +18,7 @@ async def get_current_user(
     """
     FastAPI dependency — extracts and validates the Supabase JWT using the Supabase Server Client.
     """
-    from backend.supabase_client import get_supabase
+    from .supabase_client import get_supabase
     
     token = credentials.credentials
 

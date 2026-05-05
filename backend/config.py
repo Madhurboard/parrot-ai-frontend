@@ -8,7 +8,7 @@ import torch
 from dotenv import load_dotenv
 
 # Force load the .env file from the root
-load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 
 # ============================================================================
@@ -32,9 +32,9 @@ FRONTEND_URLS: list[str] = [
 # Model
 # ============================================================================
 MODEL_MAP: dict[str, str] = {
-    "base": "model_cache/Qwen3-TTS-1.7B-Base",
-    "design": "model_cache/Qwen3-TTS-1.7B-VoiceDesign",
-    "custom": "model_cache/Qwen3-TTS-1.7B-CustomVoice",
+    "base": "backend/model_cache/Qwen3-TTS-1.7B-Base",
+    "design": "backend/model_cache/Qwen3-TTS-1.7B-VoiceDesign",
+    "custom": "backend/model_cache/Qwen3-TTS-1.7B-CustomVoice",
 }
 
 CLOUD_SPACE_ID = "Qwen/Qwen3-TTS"

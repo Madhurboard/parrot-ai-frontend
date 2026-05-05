@@ -1,0 +1,161 @@
+"use client";
+
+import { useState, useRef, useEffect } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { 
+  Mic2, 
+  PlusCircle, 
+  LogOut, 
+  Library,
+  User,
+  ChevronUp
+} from "lucide-react";
+import { useAuth } from "./AuthProvider";
+import { Logo } from "./Logo";
+import { ThemeToggle } from "./ThemeToggle";
+
+interface SidebarProps {
+  isHovered: boolean;
+  setIsHovered: (value: boolean) => void;
+}
+
+export default function Sidebar({ isHovered, setIsHovered }: SidebarProps) {
+  const { user, signOut } = useAuth();
+  const pathname = usePathname();
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowUserMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  if (pathname === "/" || pathname === "/login") return null;
+
+  // New Order: Clone Voice -> Studio -> Voice Library
+  const navLinks = [
+    { name: "Clone Voice", href: "/voices/new", icon: PlusCircle },
+    { name: "Voice Library", href: "/dashboard", icon: Library },
+    { name: "Studio", href: "/studio", icon: Mic2 },
+  ];
+
+  return (
+    <aside 
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => {
+        setIsHovered(false);
+        setShowUserMenu(false);
+      }}
+      className={`fixed top-0 left-0 h-screen z-50 flex flex-col border-r border-[var(--glass-border)] bg-[var(--color-bg-primary)] transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+        isHovered ? "w-[var(--sidebar-width)] shadow-2xl shadow-black/10" : "w-16"
+      } ${showUserMenu ? "!overflow-visible" : "overflow-hidden"}`}
+    >
+      {/* Header */}
+      <div className="h-24 flex items-center w-full shrink-0">
+        <Link href="/" className="w-16 flex items-center justify-center shrink-0">
+          <Logo size={32} showText={false} />
+        </Link>
+        <div className={`flex-1 transition-all duration-300 overflow-hidden ${isHovered ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4"}`}>
+           <Logo size={32} showText={true} onlyText={true} />
+        </div>
+      </div>
+
+      {/* Nav Section */}
+      <nav className="flex-1 space-y-2 pt-4">
+        {navLinks.map((link) => {
+          const Icon = link.icon;
+          const isActive = pathname === link.href;
+          return (
+            <Link
+              key={link.name}
+              href={link.href}
+              className={`flex items-center h-12 w-full transition-all group relative ${
+                isActive 
+                  ? "text-[var(--color-text-primary)]" 
+                  : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+              }`}
+            >
+              {isActive && (
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-[var(--color-text-primary)] rounded-r-full" />
+              )}
+              
+              <div className="w-16 flex items-center justify-center shrink-0">
+                <div className={`p-2 rounded-[var(--radius-pro)] transition-colors ${isActive ? "bg-[var(--color-text-primary)] text-[var(--color-bg-primary)]" : "group-hover:bg-[var(--color-bg-secondary)]"}`}>
+                  <Icon className="h-4 w-4" />
+                </div>
+              </div>
+
+              <div className={`flex-1 whitespace-nowrap transition-all duration-300 overflow-hidden ${isHovered ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4"}`}>
+                <span className="text-[11px] font-bold uppercase tracking-widest pl-2">
+                  {link.name}
+                </span>
+              </div>
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* Footer Area */}
+      <div className="p-0 border-t border-[var(--glass-border)] shrink-0">
+        {/* Theme Toggle Slot */}
+        <div className="h-16 flex items-center">
+          <div className="w-16 flex items-center justify-center shrink-0">
+             <ThemeToggle />
+          </div>
+          <div className={`flex-1 transition-all duration-300 ${isHovered ? "opacity-40" : "opacity-0"}`}>
+             <span className="micro-label pl-2">Appearance</span>
+          </div>
+        </div>
+        
+        {user && (
+          <div className="mb-4 relative" ref={menuRef}>
+             {showUserMenu && (
+               <div className="absolute bottom-full left-4 w-56 mb-2 bg-[var(--color-bg-primary)] border border-[var(--glass-border)] rounded-[var(--radius-pro)] shadow-2xl p-2 animate-in fade-in slide-in-from-bottom-2 z-[60]">
+                 <div className="px-3 py-2 border-b border-[var(--glass-border)] mb-1">
+                   <p className="text-[9px] font-bold text-[var(--color-text-tertiary)] uppercase tracking-widest mb-1">Authenticated as</p>
+                   <p className="text-[11px] font-bold text-[var(--color-text-primary)] truncate">{user.email}</p>
+                 </div>
+                 <button 
+                  className="flex items-center gap-3 w-full px-3 py-2.5 text-[10px] font-bold uppercase tracking-widest text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-secondary)] rounded-[var(--radius-pro)] transition-all"
+                 >
+                   <User className="h-3.5 w-3.5" />
+                   Account Settings
+                 </button>
+                 <button 
+                  onClick={() => signOut()}
+                  className="flex items-center gap-3 w-full px-3 py-2.5 text-[10px] font-bold uppercase tracking-widest text-red-500 hover:bg-red-500/5 rounded-[var(--radius-pro)] transition-all"
+                 >
+                   <LogOut className="h-3.5 w-3.5" />
+                   Sign Out
+                 </button>
+               </div>
+             )}
+
+             <button 
+              onClick={() => setShowUserMenu(!showUserMenu)}
+              className={`h-16 flex items-center w-full hover:bg-[var(--color-bg-secondary)] transition-all group ${showUserMenu ? "bg-[var(--color-bg-secondary)]" : ""}`}
+             >
+                <div className="w-16 flex items-center justify-center shrink-0">
+                   <div className="h-8 w-8 rounded-[var(--radius-pro)] bg-[var(--color-text-tertiary)] flex items-center justify-center text-[var(--color-bg-primary)] font-bold text-[10px]">
+                      {user.email?.charAt(0).toUpperCase()}
+                   </div>
+                </div>
+                <div className={`flex-1 flex items-center justify-between min-w-0 transition-all duration-300 overflow-hidden ${isHovered ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4"}`}>
+                  <p className="text-[9px] font-bold truncate text-[var(--color-text-primary)] uppercase tracking-tight pl-2">
+                    {user.email?.split("@")[0]}
+                  </p>
+                  <ChevronUp className={`h-3 w-3 mr-4 text-[var(--color-text-tertiary)] transition-transform ${showUserMenu ? "rotate-180" : ""}`} />
+                </div>
+             </button>
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}

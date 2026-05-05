@@ -9,7 +9,7 @@ from typing import Optional
 
 from supabase import create_client, Client
 
-from backend.config import (
+from .config import (
     SUPABASE_URL,
     SUPABASE_SERVICE_KEY,
     VOICE_AUDIO_BUCKET,
@@ -116,6 +116,25 @@ def update_voice_embedding(voice_id: str, embedding_path: str) -> None:
     sb.table("voices").update({"embedding_path": embedding_path}).eq(
         "id", voice_id
     ).execute()
+
+
+# ============================================================================
+# User Profile Operations
+# ============================================================================
+
+
+def get_profile(user_id: str) -> Optional[dict]:
+    """Fetch a user's public profile."""
+    sb = get_supabase()
+    result = sb.table("profiles").select("*").eq("id", user_id).execute()
+    return result.data[0] if result.data else None
+
+
+def update_profile(user_id: str, data: dict) -> bool:
+    """Update a user's profile metadata."""
+    sb = get_supabase()
+    result = sb.table("profiles").update(data).eq("id", user_id).execute()
+    return bool(result.data)
 
 
 # ============================================================================
