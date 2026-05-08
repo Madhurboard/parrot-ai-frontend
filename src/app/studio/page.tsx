@@ -171,7 +171,6 @@ function StudioInner() {
         const reader = response.body?.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
-        let eventType = "";
 
         if (!reader) throw new Error("No stream.");
 
@@ -180,38 +179,50 @@ function StudioInner() {
           if (done) break;
 
           buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
+          
+          // Split by double newline to separate complete events
+          const events = buffer.split("\n\n");
+          // Keep the last incomplete event in buffer
+          buffer = events.pop() || "";
 
-          for (const line of lines) {
-            if (line.startsWith("event: ")) {
-              eventType = line.slice(7).trim();
-            } else if (line.startsWith("data: ")) {
-              let data;
-              try {
-                data = JSON.parse(line.slice(6));
-              } catch {
-                // Incomplete JSON chunk — skip and wait for more data
-                continue;
+          for (const eventBlock of events) {
+            if (!eventBlock.trim()) continue; // Skip empty blocks
+            
+            const lines = eventBlock.split("\n");
+            let eventType = "";
+            let eventData = "";
+            
+            for (const line of lines) {
+              if (line.startsWith("event: ")) {
+                eventType = line.slice(7).trim();
+              } else if (line.startsWith("data: ")) {
+                eventData = line.slice(6);
               }
-
-              if (eventType === "progress") {
-                setProgress({
-                  stage: data.stage || "Processing",
-                  percent: data.percent || 0,
-                  message: data.message || "",
-                });
-              } else if (eventType === "complete" && data.audio) {
-                const binaryString = atob(data.audio);
-                const bytes = new Uint8Array(binaryString.length);
-                for (let i = 0; i < binaryString.length; i++) {
-                  bytes[i] = binaryString.charCodeAt(i);
+            }
+            
+            if (eventType && eventData) {
+              try {
+                const data = JSON.parse(eventData);
+                if (eventType === "progress") {
+                  setProgress({
+                    stage: data.stage || "Processing",
+                    percent: data.percent || 0,
+                    message: data.message || "",
+                  });
+                } else if (eventType === "complete" && data.audio) {
+                  const binaryString = atob(data.audio);
+                  const bytes = new Uint8Array(binaryString.length);
+                  for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                  }
+                  const audioBlob = new Blob([bytes], { type: "audio/wav" });
+                  addHistory(URL.createObjectURL(audioBlob), "clone");
+                  setProgress({ stage: "Done", percent: 100, message: "Audio ready!" });
+                } else if (eventType === "error") {
+                  throw new Error(data.message || "Failed.");
                 }
-                const audioBlob = new Blob([bytes], { type: "audio/wav" });
-                addHistory(URL.createObjectURL(audioBlob), "clone");
-                setProgress({ stage: "Done", percent: 100, message: "Created." });
-              } else if (eventType === "error") {
-                throw new Error(data.message || "Failed.");
+              } catch (parseErr) {
+                console.error(`[SSE] Parse error for event ${eventType}:`, parseErr);
               }
             }
           }
