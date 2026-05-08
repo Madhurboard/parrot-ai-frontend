@@ -112,10 +112,10 @@ export default function Dashboard() {
   );
 
   return (
-    <div className="h-screen flex flex-col animate-fade-in max-w-[1600px] mx-auto overflow-hidden">
+    <div className="min-h-[100dvh] flex flex-col animate-fade-in max-w-[1600px] mx-auto overflow-hidden pb-20 md:pb-0">
       
       {/* ── Page Header ── */}
-      <header className="px-8 md:px-14 py-10 flex flex-col md:flex-row md:items-end justify-between gap-8 border-b border-[var(--glass-border)] shrink-0">
+      <header className="px-4 sm:px-6 md:px-14 py-6 md:py-10 flex flex-col md:flex-row md:items-end justify-between gap-6 md:gap-8 border-b border-[var(--glass-border)] shrink-0">
         <div className="space-y-3">
           <div className="flex items-center gap-2.5 text-[9px] font-black uppercase tracking-[0.4em] text-[var(--color-text-tertiary)]">
             <span>Voices: {voices.length}</span>
@@ -154,7 +154,7 @@ export default function Dashboard() {
       )}
 
       {/* ── Scrollable Content ── */}
-      <section className="flex-1 overflow-y-auto px-8 md:px-14 py-10 space-y-10 custom-scrollbar">
+      <section className="flex-1 overflow-y-auto px-4 sm:px-6 md:px-14 py-6 md:py-10 space-y-8 md:space-y-10 custom-scrollbar">
         <div className="flex items-center justify-between gap-6">
           <div className="relative flex-1 max-w-xl group">
             <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--color-text-tertiary)]" />

@@ -279,11 +279,11 @@ function StudioInner() {
   if (authLoading) return <div className="flex h-screen items-center justify-center bg-[var(--color-bg-primary)]"><Loader2 className="h-6 w-6 animate-spin text-[var(--color-text-primary)]" /></div>;
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-[var(--color-bg-primary)] text-[var(--color-text-primary)]">
+    <div className="flex flex-col min-h-[100dvh] overflow-hidden bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] pb-20 md:pb-0">
 
       {/* ── Header ── */}
-      <header className="h-14 flex items-center justify-between px-6 border-b border-[var(--glass-border)] bg-[var(--color-bg-primary)] shrink-0 z-40">
-        <div className="flex items-center gap-6">
+      <header className="h-14 flex items-center justify-between px-4 sm:px-6 border-b border-[var(--glass-border)] bg-[var(--color-bg-primary)] shrink-0 z-40 gap-3">
+        <div className="flex items-center gap-3 sm:gap-6 min-w-0">
           <button
             onClick={() => setIsLeftSidebarOpen(!isLeftSidebarOpen)}
             className="p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-colors border border-transparent hover:border-[var(--glass-border)] rounded-[var(--radius-pro)]"
@@ -296,12 +296,12 @@ function StudioInner() {
           </div>
         </div>
 
-        <div className="flex items-center gap-1 bg-[var(--color-bg-secondary)] p-1 rounded-[var(--radius-pro)] border border-[var(--glass-border)]">
+        <div className="flex items-center gap-1 bg-[var(--color-bg-secondary)] p-1 rounded-[var(--radius-pro)] border border-[var(--glass-border)] overflow-x-auto max-w-[calc(100vw-12rem)] sm:max-w-none">
           {(["clone", "design", "dialogue"] as StudioMode[]).map((m) => (
             <button
               key={m}
               onClick={() => handleModeChange(m)}
-              className={`px-6 py-1 rounded-[var(--radius-pro)] text-[9px] font-black uppercase tracking-[0.3em] transition-all ${mode === m
+              className={`px-2 sm:px-6 py-1 rounded-[var(--radius-pro)] text-[8px] sm:text-[9px] font-black uppercase tracking-[0.2em] sm:tracking-[0.3em] transition-all whitespace-nowrap ${mode === m
                 ? "bg-[var(--color-text-primary)] text-[var(--color-bg-primary)] shadow-sm"
                 : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]"
                 }`}
@@ -311,7 +311,7 @@ function StudioInner() {
           ))}
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="hidden sm:flex items-center gap-4">
           <div className="hidden sm:flex items-center gap-2 px-3 py-1 border border-[var(--glass-border)] rounded-[var(--radius-pro)]">
             <div className="h-1 w-1 bg-emerald-500 rounded-full animate-pulse" />
             <span className="text-[8px] font-black uppercase tracking-widest text-[var(--color-text-tertiary)]">Engine Online</span>
@@ -319,11 +319,11 @@ function StudioInner() {
         </div>
       </header>
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
 
         {/* ── Sidebar (Left) ── */}
-        <aside className={`flex flex-col bg-[var(--color-bg-primary)] border-r border-[var(--glass-border)] transition-all duration-300 ${isLeftSidebarOpen && mode === "clone" ? "w-64" : "w-0 overflow-hidden border-none"}`}>
-          <div className="p-6 space-y-6">
+        <aside className={`flex flex-col bg-[var(--color-bg-primary)] border-r border-[var(--glass-border)] transition-all duration-300 ${isLeftSidebarOpen && mode === "clone" ? "w-full md:w-64 h-52 md:h-auto" : "w-full md:w-0 h-0 overflow-hidden border-none"}`}>
+          <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-[9px] font-black uppercase tracking-[0.3em] text-[var(--color-text-tertiary)]">Library</h2>
               <span className="text-[8px] font-black opacity-30">[{voices.length}]</span>
@@ -340,7 +340,7 @@ function StudioInner() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-4 pb-6 space-y-1 custom-scrollbar">
+          <div className="flex-1 overflow-y-auto px-4 pb-4 md:pb-6 space-y-1 custom-scrollbar">
             {voices.filter(v => v.name.toLowerCase().includes(searchTerm.toLowerCase())).map(v => (
               <button
                 key={v.id}
@@ -357,13 +357,13 @@ function StudioInner() {
         </aside>
 
         {/* ── Main Canvas ── */}
-        <main className="flex-1 flex flex-col overflow-hidden bg-[var(--color-bg-primary)] relative">
+        <main className="flex-1 flex flex-col overflow-hidden bg-[var(--color-bg-primary)] relative min-h-0">
 
           <div className="absolute inset-0 pointer-events-none opacity-[0.02] grayscale">
             <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-[var(--color-text-primary)] rounded-full blur-[150px] animate-pulse" />
           </div>
 
-          <div className="flex-1 flex flex-col p-8 md:p-12 z-10 overflow-y-auto custom-scrollbar">
+          <div className="flex-1 flex flex-col p-4 sm:p-6 md:p-12 z-10 overflow-y-auto custom-scrollbar">
             <div className="max-w-4xl mx-auto w-full flex-1 flex flex-col gap-8 animate-fade-in">
 
               <div className="space-y-1.5 shrink-0">

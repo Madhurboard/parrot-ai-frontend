@@ -88,8 +88,8 @@ export default function NewVoicePage() {
   if (authLoading) return null;
 
   return (
-    <div className="h-screen bg-[var(--color-bg-primary)] flex flex-col items-center justify-center p-6 md:p-12 overflow-hidden">
-      <div className="w-full max-w-xl space-y-12 animate-fade-in py-8">
+    <div className="min-h-[100dvh] bg-[var(--color-bg-primary)] flex flex-col items-center justify-center px-4 sm:px-6 md:p-12 py-8 pb-24 md:pb-12 overflow-hidden">
+      <div className="w-full max-w-xl space-y-10 md:space-y-12 animate-fade-in py-4 md:py-8">
 
         {/* Page Header */}
         <div className="space-y-3">
@@ -97,7 +97,7 @@ export default function NewVoicePage() {
             <PlusCircle className="h-3.5 w-3.5" />
             <span>New Voice</span>
           </div>
-          <h1 className="text-3xl md:text-4xl font-black tracking-tighter text-[var(--color-text-primary)] uppercase">
+          <h1 className="text-3xl md:text-4xl font-black tracking-tighter text-[var(--color-text-primary)] uppercase leading-[0.95]">
             Create a New Voice.
           </h1>
           <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed max-w-sm opacity-60">
