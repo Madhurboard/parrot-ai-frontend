@@ -37,7 +37,7 @@ export default function LandingPage() {
             </h1>
           </div>
           
-          <p className="text-xl md:text-2xl text-[var(--color-text-secondary)] max-w-xl leading-tight font-medium">
+          <p className="text-lg md:text-2xl text-[var(--color-text-secondary)] max-w-xl leading-snug font-medium">
             Professional cloning and synthesis. <br />
             Built for the future of audio.
           </p>
@@ -68,12 +68,12 @@ export default function LandingPage() {
       </section>
 
       {/* ── Ultra Minimal Footer ── */}
-      <footer className="relative w-full px-12 py-12 flex items-center justify-between opacity-30 z-10">
-        <div className="text-[10px] font-bold uppercase tracking-[0.3em]">
+      <footer className="relative w-full px-6 md:px-12 py-12 flex flex-col md:flex-row items-center justify-between gap-6 opacity-30 z-10">
+        <div className="text-[9px] font-bold uppercase tracking-[0.3em]">
           Parrot AI © 2026
         </div>
-        <div className="h-px flex-1 mx-12 bg-[var(--color-text-primary)]/10" />
-        <div className="text-[10px] font-bold uppercase tracking-[0.3em]">
+        <div className="hidden md:block h-px flex-1 mx-12 bg-[var(--color-text-primary)]/10" />
+        <div className="text-[9px] font-bold uppercase tracking-[0.3em]">
           Studio Engine v3
         </div>
       </footer>

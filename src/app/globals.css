@@ -54,11 +54,13 @@
   --color-accent: #1a1a1a;
   --color-accent-soft: rgba(0, 0, 0, 0.03);
 
-  --glass-bg: rgba(252, 252, 249, 0.8);
-  --glass-border: rgba(0, 0, 0, 0.08);
+  --glass-bg: rgba(252, 252, 249, 0.4);
+  --glass-border: rgba(0, 0, 0, 0.05);
 
-  --radius-pro: 2px;
-  --sidebar-width: 340px;
+  --radius-pro: 12px;
+  --sidebar-width: 280px;
+  --header-height: 56px;
+  --mobile-nav-height: 64px;
 }
 
 .dark {
@@ -73,16 +75,25 @@
   --color-accent: #ffffff;
   --color-accent-soft: rgba(255, 255, 255, 0.05);
 
-  --glass-bg: rgba(5, 5, 5, 0.8);
-  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-bg: rgba(10, 10, 10, 0.4);
+  --glass-border: rgba(255, 255, 255, 0.05);
 }
 
 @layer base {
   html, body {
-    @apply bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] antialiased transition-colors duration-300 overflow-hidden;
+    @apply bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] antialiased transition-colors duration-300;
     height: 100%;
     width: 100%;
     font-feature-settings: "ss01", "ss02", "cv01", "cv02", "tnum";
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  @media (max-width: 767px) {
+    html, body {
+      @apply overflow-x-hidden;
+      height: auto;
+      min-height: -webkit-fill-available;
+    }
   }
 
   /* Hide scrollbars globally but maintain functionality */
@@ -94,27 +105,44 @@
   *::-webkit-scrollbar {
     display: none !important;
   }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 @layer components {
   .btn-primary {
-    @apply px-10 py-3.5 bg-[var(--color-text-primary)] text-[var(--color-bg-primary)] rounded-[var(--radius-pro)] font-bold text-[11px] uppercase tracking-[0.2em] transition-all hover:opacity-90 active:scale-[0.98] shadow-sm;
+    @apply px-6 py-3 bg-[var(--color-text-primary)] text-[var(--color-bg-primary)] rounded-[var(--radius-pro)] font-bold text-[11px] uppercase tracking-[0.2em] transition-all hover:opacity-90 active:scale-[0.98] shadow-sm;
   }
 
   .hero-title {
-    @apply text-6xl md:text-5xl lg:text-8xl font-bold tracking-tighter leading-[0.9] text-[var(--color-text-primary)];
+    @apply text-5xl md:text-7xl lg:text-9xl font-bold tracking-tighter leading-[0.85] text-[var(--color-text-primary)];
+  }
+
+  .glass-card {
+    @apply bg-[var(--glass-bg)] border border-[var(--glass-border)] backdrop-blur-xl rounded-[var(--radius-pro)];
+  }
+
+  .mobile-safe-bottom {
+    padding-bottom: calc(env(safe-area-inset-bottom) + var(--mobile-nav-height) + 1rem);
   }
 
   .aurora-container {
     @apply absolute inset-0 overflow-hidden -z-10 pointer-events-none;
-    filter: blur(100px);
-    opacity: 0.8;
+    filter: blur(80px);
+    opacity: 0.6;
   }
 
   .aurora-blob {
-    @apply absolute w-[1200px] h-[1200px] rounded-full;
+    @apply absolute w-[800px] h-[800px] rounded-full;
     background: conic-gradient(from 0deg, var(--color-text-tertiary), transparent, var(--color-text-tertiary));
-    animation: aurora 60s linear infinite;
+    animation: aurora 40s linear infinite;
     mix-blend-mode: overlay;
   }
 
@@ -124,7 +152,7 @@
     z-index: 50;
     pointer-events: none;
     background-image: url("https://grainy-gradients.vercel.app/noise.svg");
-    opacity: 0.04;
+    opacity: 0.03;
   }
 }
 

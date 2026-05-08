@@ -279,30 +279,33 @@ function StudioInner() {
   if (authLoading) return <div className="flex h-screen items-center justify-center bg-[var(--color-bg-primary)]"><Loader2 className="h-6 w-6 animate-spin text-[var(--color-text-primary)]" /></div>;
 
   return (
-    <div className="flex flex-col min-h-[100dvh] overflow-hidden bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] pb-20 md:pb-0">
+    <div className="flex flex-col bg-[var(--color-bg-primary)] text-[var(--color-text-primary)]">
 
-      {/* ── Header ── */}
-      <header className="h-14 flex items-center justify-between px-4 sm:px-6 border-b border-[var(--glass-border)] bg-[var(--color-bg-primary)] shrink-0 z-40 gap-3">
-        <div className="flex items-center gap-3 sm:gap-6 min-w-0">
-          <button
-            onClick={() => setIsLeftSidebarOpen(!isLeftSidebarOpen)}
-            className="p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-colors border border-transparent hover:border-[var(--glass-border)] rounded-[var(--radius-pro)]"
-          >
-            <Layers className="h-4 w-4" />
-          </button>
-          <div className="flex flex-col">
-            <span className="text-[8px] font-black uppercase tracking-[0.4em] text-[var(--color-text-tertiary)] opacity-40">Active</span>
-            <span className="text-[10px] font-black uppercase tracking-[0.2em]">Studio</span>
+      {/* ── Studio Header (Sub-navigation) ── */}
+      <header className="flex items-center justify-between px-4 h-12 border-b border-[var(--glass-border)] bg-[var(--color-bg-primary)] shrink-0 z-40 md:px-6 md:h-14">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsLeftSidebarOpen(!isLeftSidebarOpen)}
+              className={`p-2 transition-all rounded-[var(--radius-pro)] border ${isLeftSidebarOpen ? 'bg-[var(--color-text-primary)] text-[var(--color-bg-primary)] border-[var(--color-text-primary)]' : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] border-[var(--glass-border)]'}`}
+            >
+              <Layers className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="flex md:hidden items-center gap-2 px-3 py-1.5 glass-card !rounded-full">
+            <div className="h-1.5 w-1.5 bg-emerald-500 rounded-full animate-pulse" />
+            <span className="text-[7px] font-black uppercase tracking-widest text-[var(--color-text-tertiary)]">Live</span>
           </div>
         </div>
 
-        <div className="flex items-center gap-1 bg-[var(--color-bg-secondary)] p-1 rounded-[var(--radius-pro)] border border-[var(--glass-border)] overflow-x-auto max-w-[calc(100vw-12rem)] sm:max-w-none">
+        <div className="flex items-center gap-1 bg-[var(--color-bg-secondary)] p-1 rounded-full border border-[var(--glass-border)] overflow-x-auto no-scrollbar flex-1 md:flex-none md:min-w-[300px] shadow-inner ml-2">
           {(["clone", "design", "dialogue"] as StudioMode[]).map((m) => (
             <button
               key={m}
               onClick={() => handleModeChange(m)}
-              className={`px-2 sm:px-6 py-1 rounded-[var(--radius-pro)] text-[8px] sm:text-[9px] font-black uppercase tracking-[0.2em] sm:tracking-[0.3em] transition-all whitespace-nowrap ${mode === m
-                ? "bg-[var(--color-text-primary)] text-[var(--color-bg-primary)] shadow-sm"
+              className={`flex-1 md:px-6 py-2 rounded-full text-[8px] font-black uppercase tracking-[0.15em] transition-all whitespace-nowrap ${mode === m
+                ? "bg-[var(--color-text-primary)] text-[var(--color-bg-primary)] shadow-md"
                 : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]"
                 }`}
             >
@@ -311,60 +314,91 @@ function StudioInner() {
           ))}
         </div>
 
-        <div className="hidden sm:flex items-center gap-4">
-          <div className="hidden sm:flex items-center gap-2 px-3 py-1 border border-[var(--glass-border)] rounded-[var(--radius-pro)]">
-            <div className="h-1 w-1 bg-emerald-500 rounded-full animate-pulse" />
+        <div className="hidden md:flex items-center gap-4">
+          <div className="flex items-center gap-2 px-3 py-1.5 border border-[var(--glass-border)] rounded-full">
+            <div className="h-1.5 w-1.5 bg-emerald-500 rounded-full animate-pulse" />
             <span className="text-[8px] font-black uppercase tracking-widest text-[var(--color-text-tertiary)]">Engine Online</span>
           </div>
         </div>
       </header>
 
-      <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+      <div className="flex-1 flex flex-col md:flex-row overflow-visible md:overflow-hidden min-h-0">
 
-        {/* ── Sidebar (Left) ── */}
-        <aside className={`flex flex-col bg-[var(--color-bg-primary)] border-r border-[var(--glass-border)] transition-all duration-300 ${isLeftSidebarOpen && mode === "clone" ? "w-full md:w-64 h-52 md:h-auto" : "w-full md:w-0 h-0 overflow-hidden border-none"}`}>
-          <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+        {/* ── Mobile Voice Quick Selector ── */}
+        <div className={`md:hidden flex flex-col bg-[var(--color-bg-primary)] border-b border-[var(--glass-border)] transition-all duration-300 ${isLeftSidebarOpen && mode === "clone" ? "h-20 opacity-100" : "h-0 opacity-0 overflow-hidden border-none"}`}>
+           <div className="flex items-center gap-3 px-6 h-full overflow-x-auto no-scrollbar">
+              {voices.map(v => (
+                <button
+                  key={v.id}
+                  onClick={() => setSelectedVoice(v.id)}
+                  className={`shrink-0 px-4 py-2 rounded-full border text-[9px] font-black uppercase tracking-widest transition-all ${selectedVoice === v.id 
+                    ? "bg-[var(--color-text-primary)] border-[var(--color-text-primary)] text-[var(--color-bg-primary)]" 
+                    : "border-[var(--glass-border)] text-[var(--color-text-tertiary)] hover:border-[var(--color-text-primary)] hover:text-[var(--color-text-primary)]"
+                  }`}
+                >
+                  {v.name}
+                </button>
+              ))}
+           </div>
+        </div>
+
+        {/* ── Desktop Sidebar (Library) ── */}
+        <aside className={`
+          hidden md:flex flex-col bg-[var(--color-bg-primary)] border-r border-[var(--glass-border)] transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]
+          ${isLeftSidebarOpen && mode === "clone" 
+            ? "md:w-72" 
+            : "md:w-0 overflow-hidden border-none opacity-0"
+          }
+        `}>
+          <div className="p-6 space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-[9px] font-black uppercase tracking-[0.3em] text-[var(--color-text-tertiary)]">Library</h2>
-              <span className="text-[8px] font-black opacity-30">[{voices.length}]</span>
+              <div className="flex flex-col">
+                <span className="text-[7px] font-black uppercase tracking-[0.3em] text-[var(--color-text-tertiary)] opacity-40 mb-1">Available</span>
+                <h2 className="text-[10px] font-black uppercase tracking-[0.2em]">Voice Library</h2>
+              </div>
+              <span className="text-[9px] font-black px-2 py-1 bg-[var(--color-bg-secondary)] rounded-full text-[var(--color-text-tertiary)]">
+                {voices.length}
+              </span>
             </div>
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[var(--color-text-tertiary)]" />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[var(--color-text-tertiary)]" />
               <input
                 type="text"
-                placeholder="SEARCH..."
+                placeholder="SEARCH VOICES..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-[var(--color-bg-secondary)] border border-[var(--glass-border)] rounded-[var(--radius-pro)] py-2 pl-9 pr-3 text-[9px] font-black uppercase tracking-widest focus:outline-none focus:border-[var(--color-text-primary)] transition-all placeholder:opacity-20"
+                className="w-full bg-[var(--color-bg-secondary)] border border-[var(--glass-border)] rounded-full py-3 pl-10 pr-4 text-[9px] font-black uppercase tracking-widest focus:outline-none focus:border-[var(--color-text-primary)] transition-all placeholder:opacity-30"
               />
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-4 pb-4 md:pb-6 space-y-1 custom-scrollbar">
+          <div className="flex-1 overflow-y-auto px-4 pb-6 space-y-1.5 no-scrollbar">
             {voices.filter(v => v.name.toLowerCase().includes(searchTerm.toLowerCase())).map(v => (
               <button
                 key={v.id}
                 onClick={() => setSelectedVoice(v.id)}
-                className={`w-full flex items-center gap-3 p-2.5 rounded-[var(--radius-pro)] transition-all border ${selectedVoice === v.id
-                  ? "bg-[var(--color-text-primary)] border-[var(--color-text-primary)] text-[var(--color-bg-primary)]"
+                className={`w-full flex items-center gap-4 p-4 rounded-[var(--radius-pro)] transition-all group border ${selectedVoice === v.id
+                  ? "bg-[var(--color-text-primary)] border-[var(--color-text-primary)] text-[var(--color-bg-primary)] shadow-lg translate-x-1"
                   : "border-transparent hover:bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"}`}
               >
-                <Mic className={`h-3 w-3 ${selectedVoice === v.id ? "opacity-100" : "opacity-30"}`} />
-                <span className="truncate flex-1 text-left text-[9px] font-black uppercase tracking-widest">{v.name}</span>
+                <div className={`h-8 w-8 rounded-full flex items-center justify-center transition-colors ${selectedVoice === v.id ? 'bg-[var(--color-bg-primary)]/10' : 'bg-[var(--color-bg-secondary)] group-hover:bg-[var(--color-bg-tertiary)]'}`}>
+                  <Mic className={`h-3.5 w-3.5 ${selectedVoice === v.id ? "opacity-100" : "opacity-40"}`} />
+                </div>
+                <span className="truncate flex-1 text-left text-[10px] font-black uppercase tracking-widest">{v.name}</span>
               </button>
             ))}
           </div>
         </aside>
 
         {/* ── Main Canvas ── */}
-        <main className="flex-1 flex flex-col overflow-hidden bg-[var(--color-bg-primary)] relative min-h-0">
+        <main className="flex-1 flex flex-col overflow-visible md:overflow-hidden bg-[var(--color-bg-primary)] relative min-h-0">
 
           <div className="absolute inset-0 pointer-events-none opacity-[0.02] grayscale">
             <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-[var(--color-text-primary)] rounded-full blur-[150px] animate-pulse" />
           </div>
 
-          <div className="flex-1 flex flex-col p-4 sm:p-6 md:p-12 z-10 overflow-y-auto custom-scrollbar">
-            <div className="max-w-4xl mx-auto w-full flex-1 flex flex-col gap-8 animate-fade-in">
+          <div className="flex-1 flex flex-col z-10 overflow-visible md:overflow-y-auto custom-scrollbar overscroll-contain touch-pan-y">
+            <div className="max-w-4xl mx-auto w-full flex-1 p-4 md:p-8 flex flex-col gap-8 animate-fade-in pb-64 md:pb-12">
 
               <div className="space-y-1.5 shrink-0">
                 <h2 className="text-[10px] font-black uppercase tracking-[0.5em] text-[var(--color-text-tertiary)]">
@@ -373,8 +407,8 @@ function StudioInner() {
                 <div className="h-0.5 w-8 bg-[var(--color-text-primary)]" />
               </div>
 
-              {/* Input Area - Scrollable */}
-              <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-8">
+              {/* Input Area - Non-scrolling (parent scrolls) */}
+              <div className="flex-1 space-y-8">
                 {mode === "design" && (
                   <div className="space-y-3">
                     <label className="text-[9px] font-black uppercase tracking-[0.3em] opacity-40">Voice Characteristics</label>
@@ -391,93 +425,87 @@ function StudioInner() {
                 {mode === "dialogue" ? (
                   <div className="space-y-6">
                     <div className="flex items-center justify-between px-1">
-                      <label className="text-[9px] font-bold uppercase tracking-[0.2em] opacity-30 text-[var(--color-text-primary)]">Script Segments</label>
+                      <label className="text-[9px] font-black uppercase tracking-[0.4em] opacity-40">Script Segments</label>
                       <button 
                         onClick={() => setDialogueLines([...dialogueLines, { speaker: "", voiceId: "", text: "", type: "cloned" }])}
-                        className="text-[9px] font-bold uppercase tracking-widest text-[var(--color-text-primary)] hover:opacity-50 transition-opacity flex items-center gap-2"
+                        className="bg-[var(--color-text-primary)] text-[var(--color-bg-primary)] px-4 py-2 rounded-full text-[8px] font-black uppercase tracking-widest flex items-center gap-2 shadow-lg active:scale-95 transition-all"
                       >
-                        <Plus className="h-3 w-3" /> Add
+                        <Plus className="h-3 w-3" /> Add Segment
                       </button>
                     </div>
                     
-                    <div className="space-y-1 pr-2">
+                    <div className="space-y-4 pr-2">
                       {dialogueLines.map((line, i) => (
-                        <div key={i} className="group flex items-center gap-0 py-4 border-b border-[var(--color-text-primary)]/10 last:border-none transition-all hover:bg-[var(--color-bg-secondary)]/30 rounded-sm relative" onClick={(e) => e.stopPropagation()}>
-                          <div className="w-32 shrink-0 pr-4 flex justify-end items-center gap-2 group/speaker cursor-pointer">
-                            <div 
-                              onClick={() => setActiveSpeakerMenu(activeSpeakerMenu === i ? null : i)}
-                              className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.1em] text-[var(--color-text-primary)] hover:text-[var(--color-text-secondary)] transition-colors pr-2"
-                            >
-                              {line.speaker || "SPEAKER"}
-                              <ChevronDown className={`h-2.5 w-2.5 transition-transform ${activeSpeakerMenu === i ? 'rotate-180' : ''} opacity-40`} />
+                        <div key={i} className="group flex flex-col sm:flex-row sm:items-center gap-4 p-5 glass-card transition-all hover:bg-[var(--color-bg-secondary)]/50 relative overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-between sm:justify-start gap-4">
+                            <div className="flex flex-col sm:w-32 sm:items-end">
+                              <span className="text-[7px] font-black uppercase tracking-[0.2em] text-[var(--color-text-tertiary)] mb-1">Speaker</span>
+                              <div 
+                                onClick={() => setActiveSpeakerMenu(activeSpeakerMenu === i ? null : i)}
+                                className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.1em] text-[var(--color-text-primary)] hover:text-[var(--color-text-secondary)] transition-colors cursor-pointer group/speaker"
+                              >
+                                <span className="truncate max-w-[120px]">{line.speaker || "SELECT..."}</span>
+                                <ChevronDown className={`h-2.5 w-2.5 transition-transform ${activeSpeakerMenu === i ? 'rotate-180' : ''} opacity-40`} />
+                              </div>
                             </div>
+
+                            <button 
+                              onClick={() => setDialogueLines(dl => dl.filter((_, idx) => idx !== i))} 
+                              className="sm:hidden p-2 text-[var(--color-text-tertiary)] hover:text-red-500 transition-all"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
                           </div>
 
-                          {/* Precise Vertical Separator */}
-                          <div className="w-[1px] h-4 bg-[var(--color-text-primary)] opacity-30 shrink-0 group-focus-within:opacity-100 transition-opacity relative">
-                            {activeSpeakerMenu === i && (
-                              <div className="absolute top-full left-0 mt-2 w-64 bg-[var(--color-bg-primary)] border border-[var(--glass-border)] rounded-[var(--radius-pro)] shadow-[0_30px_60px_rgba(0,0,0,0.6)] z-[999] py-1.5 overflow-hidden backdrop-blur-3xl animate-in fade-in slide-in-from-top-2 duration-200">
-                                <div className="px-4 py-2.5 text-[8px] font-black opacity-30 uppercase tracking-[0.3em] border-b border-[var(--glass-border)] mb-1.5">Select Voice</div>
-                                <div className="max-h-[280px] overflow-y-auto custom-scrollbar">
-                                  {voices.map(v => (
-                                    <button
-                                      key={v.id}
-                                      onClick={() => {
-                                        const newList = [...dialogueLines];
-                                        newList[i].speaker = v.name;
-                                        newList[i].voiceId = v.id;
-                                        newList[i].type = "cloned";
-                                        setDialogueLines(newList);
-                                        setActiveSpeakerMenu(null);
-                                      }}
-                                      className="w-full text-left px-4 py-3 text-[11px] font-black uppercase tracking-[0.15em] hover:bg-[var(--color-text-primary)] hover:text-[var(--color-bg-primary)] transition-all flex items-center justify-between group/item"
-                                    >
-                                      <span>{v.name}</span>
-                                      <Mic className="h-3 w-3 opacity-0 group-hover/item:opacity-100 transition-opacity" />
-                                    </button>
-                                  ))}
-                                  <div className="px-4 py-2 text-[7px] font-black opacity-20 uppercase tracking-[0.4em] mt-2 mb-1">System Presets</div>
-                                  {["Nova", "Atlas"].map(p => (
-                                    <button
-                                      key={p}
-                                      onClick={() => {
-                                        const newList = [...dialogueLines];
-                                        newList[i].speaker = p;
-                                        newList[i].voiceId = p;
-                                        newList[i].type = "preset";
-                                        setDialogueLines(newList);
-                                        setActiveSpeakerMenu(null);
-                                      }}
-                                      className="w-full text-left px-4 py-3 text-[11px] font-black uppercase tracking-[0.15em] hover:bg-[var(--color-text-primary)] hover:text-[var(--color-bg-primary)] transition-all opacity-60 hover:opacity-100"
-                                    >
-                                      {p}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
+                          <div className="hidden sm:block w-[1px] h-8 bg-[var(--glass-border)] shrink-0" />
                           
-                          <div className="flex-1 pl-6 flex items-center">
+                          <div className="flex-1 flex flex-col">
+                            <span className="text-[7px] font-black uppercase tracking-[0.2em] text-[var(--color-text-tertiary)] mb-1 sm:hidden">Script Content</span>
                             <textarea
                               value={line.text}
-                              rows={1}
+                              rows={2}
                               onChange={(e) => {
                                 const newList = [...dialogueLines];
                                 newList[i].text = e.target.value;
                                 setDialogueLines(newList);
                               }}
-                              placeholder="Begin dialogue..."
-                              className="w-full bg-transparent text-[14px] font-medium focus:outline-none placeholder:opacity-10 resize-none min-h-[1.5em] leading-[1.5] py-0"
+                              placeholder="Enter speech text..."
+                              className="w-full bg-transparent text-[13px] font-medium focus:outline-none placeholder:opacity-20 resize-none leading-relaxed"
                             />
                           </div>
                           
                           <button 
                             onClick={() => setDialogueLines(dl => dl.filter((_, idx) => idx !== i))} 
-                            className="p-1 text-[var(--color-text-tertiary)] hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all ml-4"
+                            className="hidden sm:block p-2 text-[var(--color-text-tertiary)] hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
+
+                          {/* Mobile Dropdown Positioning */}
+                          {activeSpeakerMenu === i && (
+                            <div className="absolute top-[var(--header-height)] left-4 right-4 bg-[var(--color-bg-primary)] border border-[var(--glass-border)] rounded-[var(--radius-pro)] shadow-[0_20px_50px_rgba(0,0,0,0.3)] z-[100] py-2 overflow-hidden backdrop-blur-3xl animate-in fade-in slide-in-from-top-2 duration-200">
+                              <div className="px-4 py-2.5 text-[8px] font-black opacity-30 uppercase tracking-[0.3em] border-b border-[var(--glass-border)] mb-1.5">Voice Selection</div>
+                              <div className="max-h-[200px] overflow-y-auto no-scrollbar">
+                                {voices.map(v => (
+                                  <button
+                                    key={v.id}
+                                    onClick={() => {
+                                      const newList = [...dialogueLines];
+                                      newList[i].speaker = v.name;
+                                      newList[i].voiceId = v.id;
+                                      newList[i].type = "cloned";
+                                      setDialogueLines(newList);
+                                      setActiveSpeakerMenu(null);
+                                    }}
+                                    className="w-full text-left px-4 py-3 text-[11px] font-black uppercase tracking-[0.15em] hover:bg-[var(--color-text-primary)] hover:text-[var(--color-bg-primary)] transition-all flex items-center justify-between"
+                                  >
+                                    <span>{v.name}</span>
+                                    <Mic className="h-3 w-3 opacity-30" />
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -506,14 +534,14 @@ function StudioInner() {
               </div>
 
               {/* Execution Dock - Fixed at Bottom of Main */}
-              <div className="shrink-0 pt-6 border-t border-[var(--glass-border)] space-y-6">
+              <div className="shrink-0 pt-6 border-t border-[var(--glass-border)] space-y-6 pb-32 md:pb-0">
 
                 {/* Results Reel (Vertical Master Stack) */}
                 <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[8px] font-bold uppercase tracking-[0.1em] opacity-30 text-[var(--color-text-primary)]">Recent Clips</label>
+                  <div className="flex items-center justify-between px-1">
+                    <label className="text-[9px] font-black uppercase tracking-[0.4em] opacity-40">Recent Clips</label>
                     {history.length > 0 && (
-                      <button onClick={() => setHistory([])} className="text-[8px] font-bold uppercase tracking-widest opacity-20 hover:opacity-100 transition-opacity">Clear</button>
+                      <button onClick={() => setHistory([])} className="text-[8px] font-bold uppercase tracking-widest opacity-20 hover:opacity-100 transition-opacity">Clear All</button>
                     )}
                   </div>
 
@@ -586,25 +614,26 @@ function StudioInner() {
                   )}
                 </div>
 
-                <div className="flex gap-4 items-end">
+                <div className="flex gap-4 items-end sticky bottom-4 md:bottom-0 bg-[var(--color-bg-primary)] pt-4 pb-4 px-4 -mx-4 z-20 shadow-[0_-20px_20px_-10px_rgba(0,0,0,0.2)] md:shadow-none border-t border-[var(--glass-border)] md:border-none rounded-t-2xl md:rounded-none">
                   <div className="flex-1">
                     {generating ? (
-                      <div className="space-y-3 animate-pulse">
+                      <div className="space-y-3 animate-pulse bg-[var(--color-bg-secondary)] p-4 rounded-full border border-[var(--glass-border)]">
                         <div className="flex items-center justify-between text-[8px] font-black uppercase tracking-[0.4em]">
                           <span>{progress?.stage}</span>
-                          <span className="text-sm italic">{progress?.percent}%</span>
+                          <span className="text-xs italic">{progress?.percent}%</span>
                         </div>
-                        <div className="w-full h-1 bg-[var(--color-bg-secondary)] rounded-full overflow-hidden">
+                        <div className="w-full h-1 bg-[var(--color-bg-primary)] rounded-full overflow-hidden">
                           <div className="h-full bg-[var(--color-text-primary)] transition-all duration-300" style={{ width: `${progress?.percent}%` }} />
                         </div>
                       </div>
                     ) : (
                       <button
                         onClick={mode === "dialogue" ? generateDialogue : generateVoice}
-                        className="w-full py-4 bg-[var(--color-text-primary)] text-[var(--color-bg-primary)] rounded-[var(--radius-pro)] text-[10px] font-bold uppercase tracking-[0.4em] flex items-center justify-center gap-3 hover:opacity-90 active:scale-[0.99] transition-all shadow-lg"
+                        disabled={generating}
+                        className="w-full py-4 bg-[var(--color-text-primary)] text-[var(--color-bg-primary)] rounded-full text-[10px] font-black uppercase tracking-[0.4em] flex items-center justify-center gap-4 hover:opacity-95 active:scale-[0.97] transition-all shadow-2xl disabled:opacity-50 group border border-white/10"
                       >
-                        <Cpu className="h-4 w-4" />
-                        Create
+                        <Cpu className={`h-4 w-4 transition-transform group-hover:rotate-12 ${generating ? 'animate-spin' : ''}`} />
+                        {generating ? 'Processing...' : 'Generate Audio'}
                       </button>
                     )}
                   </div>

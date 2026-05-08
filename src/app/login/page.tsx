@@ -30,7 +30,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center px-6 overflow-hidden transition-colors duration-500">
+    <div className="relative flex min-h-screen flex-col items-center justify-center px-6 pt-20 overflow-hidden transition-colors duration-500">
       {/* Premium Grain Overlay */}
       <div className="grainy-overlay" />
 
@@ -40,15 +40,6 @@ export default function LoginPage() {
         <div className="aurora-blob bottom-[-20%] right-[-20%] [animation-delay:-10s]" />
         <div className="aurora-blob top-[10%] right-[-10%] [animation-delay:-20s]" />
       </div>
-
-      {/* Back to Landing Link */}
-      <Link 
-        href="/" 
-        className="absolute top-10 left-10 flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.4em] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-all group z-50"
-      >
-        <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
-        <span>Return</span>
-      </Link>
 
       <div className="glass-card w-full max-w-sm p-12 text-center animate-fade-in-up border-[var(--glass-border)] relative z-10 shadow-2xl backdrop-blur-xl">
         {/* Logo */}

@@ -112,31 +112,31 @@ export default function Dashboard() {
   );
 
   return (
-    <div className="min-h-[100dvh] flex flex-col animate-fade-in max-w-[1600px] mx-auto overflow-hidden pb-20 md:pb-0">
+    <div className="flex flex-col animate-fade-in max-w-[1600px] mx-auto overflow-visible md:overflow-hidden">
       
       {/* ── Page Header ── */}
-      <header className="px-4 sm:px-6 md:px-14 py-6 md:py-10 flex flex-col md:flex-row md:items-end justify-between gap-6 md:gap-8 border-b border-[var(--glass-border)] shrink-0">
-        <div className="space-y-3">
-          <div className="flex items-center gap-2.5 text-[9px] font-black uppercase tracking-[0.4em] text-[var(--color-text-tertiary)]">
+      <header className="px-4 sm:px-6 md:px-14 py-4 md:py-10 flex flex-col md:flex-row md:items-end justify-between gap-4 md:gap-8 border-b border-[var(--glass-border)] shrink-0 bg-[var(--color-bg-primary)] z-20">
+        <div className="space-y-1 md:space-y-3">
+          <div className="flex items-center gap-2.5 text-[8px] md:text-[9px] font-black uppercase tracking-[0.4em] text-[var(--color-text-tertiary)] opacity-60">
             <span>Voices: {voices.length}</span>
           </div>
-          <h1 className="text-4xl font-black tracking-tighter uppercase text-[var(--color-text-primary)]">Voice Library.</h1>
-          <p className="text-xs text-[var(--color-text-secondary)] font-medium opacity-60">Voice profile management.</p>
+          <h1 className="text-2xl md:text-4xl font-black tracking-tighter uppercase text-[var(--color-text-primary)] leading-none">Voice Library.</h1>
+          <p className="hidden md:block text-xs text-[var(--color-text-secondary)] font-medium opacity-60">Voice profile management.</p>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 md:gap-4">
           <button
             onClick={fetchVoices}
             disabled={loading}
-            className="p-4 border border-[var(--glass-border)] rounded-[var(--radius-pro)] hover:bg-[var(--color-bg-secondary)] transition-all active:scale-95 disabled:opacity-50"
+            className="p-3 md:p-4 border border-[var(--glass-border)] rounded-[var(--radius-pro)] hover:bg-[var(--color-bg-secondary)] transition-all active:scale-95 disabled:opacity-50"
           >
-            <RefreshCcw className={`h-4 w-4 text-[var(--color-text-primary)] ${loading ? "animate-spin" : ""}`} />
+            <RefreshCcw className={`h-3.5 w-3.5 md:h-4 md:w-4 text-[var(--color-text-primary)] ${loading ? "animate-spin" : ""}`} />
           </button>
           <Link
             href="/voices/new"
-            className="btn-primary !px-10 !py-5 text-[10px] font-black uppercase tracking-[0.4em] flex items-center gap-3 active:scale-[0.98] transition-all"
+            className="btn-primary !px-6 md:!px-10 !py-4 md:!py-5 text-[9px] md:text-[10px] font-black uppercase tracking-[0.3em] md:tracking-[0.4em] flex items-center gap-2 md:gap-3 active:scale-[0.98] transition-all flex-1 md:flex-none justify-center"
           >
-            <PlusCircle className="h-4 w-4" />
+            <PlusCircle className="h-3.5 w-3.5 md:h-4 md:w-4" />
             Create New
           </Link>
         </div>
@@ -153,17 +153,17 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── Scrollable Content ── */}
-      <section className="flex-1 overflow-y-auto px-4 sm:px-6 md:px-14 py-6 md:py-10 space-y-8 md:space-y-10 custom-scrollbar">
+      {/* ── Content ── */}
+      <section className="flex-1 overflow-visible md:overflow-y-auto px-4 sm:px-6 md:px-14 py-6 md:py-10 space-y-6 md:space-y-10 custom-scrollbar pb-32 md:pb-12 min-h-0 overscroll-contain touch-pan-y">
         <div className="flex items-center justify-between gap-6">
-          <div className="relative flex-1 max-w-xl group">
-            <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--color-text-tertiary)]" />
+          <div className="relative flex-1 group">
+            <Search className="absolute left-4 md:left-5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 md:h-4 md:w-4 text-[var(--color-text-tertiary)] opacity-40" />
             <input
               type="text"
               placeholder="SEARCH BY NAME..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-[var(--color-bg-secondary)] border border-[var(--glass-border)] rounded-[var(--radius-pro)] py-4 pl-14 pr-6 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-text-primary)] transition-all placeholder:opacity-20"
+              className="w-full bg-[var(--color-bg-secondary)] border border-[var(--glass-border)] rounded-full md:rounded-[var(--radius-pro)] py-3 md:py-4 pl-12 md:pl-14 pr-6 text-[9px] md:text-[10px] font-black uppercase tracking-widest text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-text-primary)] transition-all placeholder:opacity-20 shadow-inner"
             />
           </div>
         </div>
@@ -178,7 +178,7 @@ export default function Dashboard() {
             filteredVoices.map((voice) => (
               <div
                 key={voice.id}
-                className="group relative flex flex-col justify-between p-8 border border-[var(--glass-border)] bg-[var(--color-bg-secondary)]/5 hover:bg-[var(--color-bg-secondary)]/10 hover:border-[var(--color-text-primary)] transition-all duration-300 rounded-[var(--radius-pro)]"
+                className="group relative flex flex-col justify-between p-6 md:p-8 border border-[var(--glass-border)] bg-[var(--color-bg-secondary)]/5 hover:bg-[var(--color-bg-secondary)]/10 hover:border-[var(--color-text-primary)] transition-all duration-300 rounded-[var(--radius-pro)] shadow-sm hover:shadow-xl"
               >
                 {/* Menu Toggle */}
                 <div className="absolute top-4 right-4 z-10">
@@ -209,9 +209,9 @@ export default function Dashboard() {
                   )}
                 </div>
 
-                <div className="space-y-6">
-                  <div className="h-10 w-10 bg-[var(--color-text-primary)]/5 border border-[var(--glass-border)] text-[var(--color-text-primary)] flex items-center justify-center rounded-[var(--radius-pro)] group-hover:bg-[var(--color-text-primary)] group-hover:text-[var(--color-bg-primary)] transition-all">
-                    <Mic2 className="h-5 w-5" />
+                <div className="space-y-4 md:space-y-6">
+                  <div className="h-8 w-8 md:h-10 md:w-10 bg-[var(--color-text-primary)]/5 border border-[var(--glass-border)] text-[var(--color-text-primary)] flex items-center justify-center rounded-[var(--radius-pro)] group-hover:bg-[var(--color-text-primary)] group-hover:text-[var(--color-bg-primary)] transition-all">
+                    <Mic2 className="h-3.5 w-3.5 md:h-5 md:w-5" />
                   </div>
 
                   <div className="space-y-2">
@@ -222,13 +222,13 @@ export default function Dashboard() {
                           value={editName}
                           onChange={(e) => setEditName(e.target.value)}
                           onKeyDown={(e) => e.key === 'Enter' && handleRename(voice.id)}
-                          className="bg-transparent border-b border-[var(--color-text-primary)] text-lg font-black uppercase tracking-tighter focus:outline-none w-full"
+                          className="bg-transparent border-b border-[var(--color-text-primary)] text-base md:text-lg font-black uppercase tracking-tighter focus:outline-none w-full"
                         />
                         <button onClick={() => handleRename(voice.id)} className="p-1 hover:text-emerald-500"><Check className="h-4 w-4" /></button>
                         <button onClick={() => setEditingId(null)} className="p-1 hover:text-red-500"><X className="h-4 w-4" /></button>
                       </div>
                     ) : (
-                      <h3 className="font-black text-xl tracking-tighter uppercase text-[var(--color-text-primary)] truncate">{voice.name}</h3>
+                      <h3 className="font-black text-lg md:text-xl tracking-tighter uppercase text-[var(--color-text-primary)] truncate">{voice.name}</h3>
                     )}
                     <div className="flex items-center gap-2 text-[8px] font-black uppercase tracking-widest text-[var(--color-text-tertiary)] opacity-60">
                       <Clock className="h-3 w-3" />
@@ -237,12 +237,12 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                <div className="mt-10 pt-6 border-t border-[var(--glass-border)]">
+                <div className="mt-8 md:mt-10 pt-4 md:pt-6 border-t border-[var(--glass-border)]">
                   <Link
                     href={`/studio?voice=${voice.id}`}
-                    className="w-full h-12 flex items-center justify-center gap-3 border border-[var(--color-text-primary)] text-[var(--color-text-primary)] hover:bg-[var(--color-text-primary)] hover:text-[var(--color-bg-primary)] text-[9px] font-black uppercase tracking-[0.3em] transition-all rounded-[var(--radius-pro)]"
+                    className="w-full h-10 md:h-12 flex items-center justify-center gap-3 border border-[var(--color-text-primary)] text-[var(--color-text-primary)] hover:bg-[var(--color-text-primary)] hover:text-[var(--color-bg-primary)] text-[8px] md:text-[9px] font-black uppercase tracking-[0.3em] transition-all rounded-[var(--radius-pro)]"
                   >
-                    <Play className="h-3 w-3 fill-current" />
+                    <Play className="h-2.5 w-2.5 md:h-3 md:w-3 fill-current" />
                     Use in Studio
                   </Link>
                 </div>

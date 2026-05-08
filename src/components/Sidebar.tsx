@@ -165,53 +165,78 @@ export default function Sidebar({ isHovered, setIsHovered }: SidebarProps) {
       </div>
     </aside>
 
-    <div className="fixed top-4 right-4 z-[60] md:hidden flex items-center gap-2 rounded-[var(--radius-pro)] border border-[var(--glass-border)] bg-[var(--color-bg-primary)]/95 p-2 shadow-[0_12px_40px_rgba(0,0,0,0.15)] backdrop-blur-xl">
-      <div className="flex items-center justify-center text-[var(--color-text-secondary)]">
+    {/* Mobile Header */}
+    <div className="fixed top-0 inset-x-0 z-[60] md:hidden glass-card !rounded-none border-t-0 border-x-0 h-[var(--header-height)] flex items-center justify-between px-6 shadow-sm">
+      <Link href="/" className="flex items-center">
+        <Logo size={24} showText={true} />
+      </Link>
+      
+      <div className="flex items-center gap-4">
         <ThemeToggle />
-      </div>
-
-      {user ? (
-        <div className="relative" ref={menuRef}>
-          {showUserMenu && (
-            <div className="absolute right-0 top-full mt-2 w-56 rounded-[var(--radius-pro)] border border-[var(--glass-border)] bg-[var(--color-bg-primary)] p-2 shadow-2xl">
-              <div className="mb-1 border-b border-[var(--glass-border)] px-3 py-2">
-                <p className="mb-1 text-[8px] font-bold uppercase tracking-widest text-[var(--color-text-tertiary)]">Authenticated as</p>
-                <p className="truncate text-[11px] font-bold text-[var(--color-text-primary)]">{user.email}</p>
+        {user ? (
+          <div className="relative" ref={menuRef}>
+            {showUserMenu && (
+              <div className="absolute right-0 top-full mt-3 w-64 glass-card p-2 shadow-2xl animate-in fade-in slide-in-from-top-2">
+                <div className="px-4 py-3 border-b border-[var(--glass-border)] mb-1">
+                  <p className="text-[8px] font-black uppercase tracking-[0.2em] text-[var(--color-text-tertiary)] mb-1">Account</p>
+                  <p className="text-[11px] font-black text-[var(--color-text-primary)] truncate">{user.email}</p>
+                </div>
+                <button className="flex w-full items-center gap-3 rounded-[var(--radius-pro)] px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[var(--color-text-secondary)] transition-all hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)]">
+                  <User className="h-3.5 w-3.5" />
+                  Settings
+                </button>
+                <button
+                  onClick={() => signOut()}
+                  className="flex w-full items-center gap-3 rounded-[var(--radius-pro)] px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-red-500 transition-all hover:bg-red-500/5"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  Sign Out
+                </button>
               </div>
-              <button className="flex w-full items-center gap-3 rounded-[var(--radius-pro)] px-3 py-2.5 text-[10px] font-bold uppercase tracking-widest text-[var(--color-text-secondary)] transition-all hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)]">
-                <User className="h-3.5 w-3.5" />
-                Account Settings
-              </button>
-              <button
-                onClick={() => signOut()}
-                className="flex w-full items-center gap-3 rounded-[var(--radius-pro)] px-3 py-2.5 text-[10px] font-bold uppercase tracking-widest text-red-500 transition-all hover:bg-red-500/5"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-                Sign Out
-              </button>
-            </div>
-          )}
+            )}
 
-          <button
-            onClick={() => setShowUserMenu(!showUserMenu)}
-            className={`flex h-9 w-9 items-center justify-center rounded-[var(--radius-pro)] ${showUserMenu ? "bg-[var(--color-bg-secondary)] text-[var(--color-text-primary)]" : "text-[var(--color-text-secondary)]"}`}
-            aria-label="Profile"
-          >
-            <div className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-pro)] bg-[var(--color-text-tertiary)] text-[10px] font-bold text-[var(--color-bg-primary)]">
-              {user.email?.charAt(0).toUpperCase()}
-            </div>
-          </button>
-        </div>
-      ) : (
-        <Link href="/login" className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-pro)] text-[var(--color-text-secondary)]" aria-label="Profile">
-          <User className="h-4 w-4" />
-        </Link>
-      )}
+            <button
+              onClick={() => setShowUserMenu(!showUserMenu)}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--color-bg-secondary)] border border-[var(--glass-border)] overflow-hidden transition-transform active:scale-95"
+            >
+               <div className="h-full w-full flex items-center justify-center bg-[var(--color-text-primary)] text-[var(--color-bg-primary)] text-[10px] font-black">
+                 {user.email?.charAt(0).toUpperCase()}
+               </div>
+            </button>
+          </div>
+        ) : (
+          <Link href="/login" className="h-9 w-9 flex items-center justify-center rounded-full bg-[var(--color-bg-secondary)] border border-[var(--glass-border)] text-[var(--color-text-secondary)] transition-all hover:text-[var(--color-text-primary)]">
+            <User className="h-4 w-4" />
+          </Link>
+        )}
+      </div>
     </div>
 
-    <nav className="fixed inset-x-0 bottom-0 z-50 md:hidden border-t border-[var(--glass-border)] bg-[var(--color-bg-primary)]/95 backdrop-blur-xl shadow-[0_-12px_40px_rgba(0,0,0,0.15)]">
-      <div className="mx-auto grid max-w-2xl grid-cols-3 gap-1 px-2 pt-2 pb-[calc(env(safe-area-inset-bottom)+0.65rem)]">
-        {navLinks.map((link) => renderNavLink(link, true))}
+    {/* Mobile Bottom Nav */}
+    <nav className="fixed inset-x-6 bottom-6 z-50 md:hidden glass-card !rounded-full shadow-2xl p-1.5 px-3 border border-white/10">
+      <div className="flex items-center justify-between gap-1 h-[48px]">
+        {navLinks.map((link) => {
+          const Icon = link.icon;
+          const isActive = pathname === link.href;
+          return (
+            <Link
+              key={link.name}
+              href={link.href}
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-all rounded-full h-full ${
+                isActive 
+                ? "bg-[var(--color-text-primary)] text-[var(--color-bg-primary)] shadow-md scale-105" 
+                : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]"
+              }`}
+            >
+              <Icon className={`${isActive ? "h-3.5 w-3.5" : "h-4 w-4"}`} />
+              {isActive && (
+                <span className="text-[6px] font-black uppercase tracking-[0.1em]">
+                  {link.name.split(' ')[0]}
+                </span>
+              )}
+            </Link>
+          );
+        })}
       </div>
     </nav>
     </>

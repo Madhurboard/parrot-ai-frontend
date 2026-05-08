@@ -31,19 +31,38 @@ export default function NewVoicePage() {
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
 
+  const getPreferredMimeType = () => {
+    if (typeof MediaRecorder === "undefined") return "";
+
+    const candidates = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/mp4",
+      "audio/ogg;codecs=opus",
+    ];
+
+    return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
+  };
+
   useEffect(() => {
     if (!authLoading && !user) router.replace("/");
   }, [user, authLoading, router]);
 
   const startRecording = async () => {
     try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setError("Recording is not supported on this device.");
+        return;
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder.current = new MediaRecorder(stream);
+      const mimeType = getPreferredMimeType();
+      mediaRecorder.current = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       chunks.current = [];
       mediaRecorder.current.ondataavailable = (e) => chunks.current.push(e.data);
       mediaRecorder.current.onstop = () => {
-        const mimeType = mediaRecorder.current?.mimeType || "audio/webm";
-        const blob = new Blob(chunks.current, { type: mimeType });
+        const recordedMimeType = mediaRecorder.current?.mimeType || mimeType || "audio/webm";
+        const blob = new Blob(chunks.current, { type: recordedMimeType });
         setAudioBlob(blob);
         setAudioUrl(URL.createObjectURL(blob));
       };
@@ -51,12 +70,14 @@ export default function NewVoicePage() {
       setIsRecording(true);
       setError("");
     } catch (err) {
-      setError("Microphone access denied.");
+      setError("Microphone access denied or unavailable on this browser.");
     }
   };
 
   const stopRecording = () => {
-    mediaRecorder.current?.stop();
+    if (!mediaRecorder.current || mediaRecorder.current.state === "inactive") return;
+
+    mediaRecorder.current.stop();
     setIsRecording(false);
     mediaRecorder.current?.stream.getTracks().forEach((track) => track.stop());
   };
@@ -68,7 +89,7 @@ export default function NewVoicePage() {
     try {
       const formData = new FormData();
       formData.append("name", name);
-      const ext = audioBlob.type.includes("webm") ? "webm" : audioBlob.type.includes("ogg") ? "ogg" : "wav";
+      const ext = audioBlob.type.includes("webm") ? "webm" : audioBlob.type.includes("ogg") ? "ogg" : audioBlob.type.includes("mp4") ? "mp4" : "wav";
       formData.append("file", audioBlob, `reference.${ext}`);
       const res = await fetch(`${API_BASE_URL}/api/voices`, {
         method: "POST",
@@ -88,7 +109,7 @@ export default function NewVoicePage() {
   if (authLoading) return null;
 
   return (
-    <div className="min-h-[100dvh] bg-[var(--color-bg-primary)] flex flex-col items-center justify-center px-4 sm:px-6 md:p-12 py-8 pb-24 md:pb-12 overflow-hidden">
+    <div className="flex flex-col items-center px-4 sm:px-6 md:p-12 py-8 overflow-hidden">
       <div className="w-full max-w-xl space-y-10 md:space-y-12 animate-fade-in py-4 md:py-8">
 
         {/* Page Header */}
@@ -128,6 +149,7 @@ export default function NewVoicePage() {
 
             <div className="grid grid-cols-2 gap-3">
               <button
+                type="button"
                 onClick={isRecording ? stopRecording : startRecording}
                 className={`h-20 border transition-all flex flex-col items-center justify-center gap-1 rounded-[var(--radius-pro)] ${isRecording
                     ? "bg-red-500 border-red-500 text-white animate-pulse shadow-[0_0_20px_rgba(239,68,68,0.2)]"
@@ -180,9 +202,10 @@ export default function NewVoicePage() {
             </div>
           ) : (
             <button
+              type="button"
               onClick={handleSubmit}
               disabled={!name || !audioBlob}
-              className="btn-primary w-full !py-6 text-[11px] flex items-center justify-center gap-4 disabled:opacity-10 transition-all active:scale-[0.98]"
+              className="btn-primary w-full !py-6 text-[11px] flex items-center justify-center gap-4 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
             >
               Create Voice
               <Zap className="h-3.5 w-3.5" />
