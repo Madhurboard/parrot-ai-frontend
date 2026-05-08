@@ -32,7 +32,7 @@ if not exist %CLOUDFLARED_PATH% (
 
 :: 1. Start the Backend in a new window
 echo [LAUNCH] Starting FastAPI Backend...
-start "Parrot AI: Backend" cmd /k "uvicorn backend.main:app --host %BE_HOST% --port %PORT% --reload"
+start "Parrot AI: Backend" cmd /k "conda activate gpu && uvicorn backend.main:app --host %BE_HOST% --port %PORT% --reload"
 
 :: 2. Start the Tunnel in a new window
 echo [LAUNCH] Starting Cloudflare Tunnel: %TUNNEL_NAME%...

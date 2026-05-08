@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>SSE Audio Test</title>
+  <style>
+    body { font-family: monospace; background: #111; color: #0f0; padding: 20px; }
+    #log { white-space: pre-wrap; font-size: 13px; max-height: 60vh; overflow-y: auto; border: 1px solid #333; padding: 10px; margin-top: 10px; }
+    button { background: #0f0; color: #000; border: none; padding: 10px 20px; cursor: pointer; font-weight: bold; font-size: 14px; margin: 5px; }
+    button:disabled { opacity: 0.3; }
+    input, select { background: #222; color: #0f0; border: 1px solid #333; padding: 8px; font-family: monospace; width: 300px; }
+    audio { margin-top: 10px; width: 100%; }
+    .section { margin: 10px 0; }
+    .success { color: #0f0; }
+    .error { color: #f00; }
+    .info { color: #ff0; }
+  </style>
+</head>
+<body>
+  <h2>🦜 Parrot AI — SSE Debug Tester</h2>
+  
+  <div class="section">
+    <label>Backend URL:</label><br>
+    <input id="apiUrl" value="http://localhost:8000" />
+  </div>
+
+  <div class="section">
+    <label>Voice ID (from DB):</label><br>
+    <input id="voiceId" value="ad56f8cb-3be8-40a2-b013-9ecd6e6ead8f" />
+  </div>
+
+  <div class="section">
+    <label>User ID (for test-token):</label><br>
+    <input id="userId" value="47bf1ba8-bc8c-48ab-9d05-63230057356b" readonly />
+  </div>
+
+  <div class="section">
+    <label>Prompt:</label><br>
+    <input id="prompt" value="hii how are you" />
+  </div>
+
+  <button id="btnGenerate" onclick="generate()">🎙️ Generate</button>
+  <button onclick="document.getElementById('log').innerText=''">Clear Log</button>
+
+  <div id="audioContainer"></div>
+  <div id="log"></div>
+
+  <script>
+    function log(msg, cls = '') {
+      const el = document.getElementById('log');
+      const ts = new Date().toLocaleTimeString();
+      el.innerHTML += `<span class="${cls}">[${ts}] ${msg}</span>\n`;
+      el.scrollTop = el.scrollHeight;
+    }
+
+    async function generate() {
+      const apiUrl = document.getElementById('apiUrl').value;
+      const voiceId = document.getElementById('voiceId').value;
+      const prompt = document.getElementById('prompt').value;
+      const btn = document.getElementById('btnGenerate');
+      
+      btn.disabled = true;
+      log('--- Starting generation ---', 'info');
+      log(`POST ${apiUrl}/api/generate-stream`);
+      log(`voice_id=${voiceId}, prompt="${prompt}"`);
+      
+      const formData = new FormData();
+      formData.append('prompt', prompt);
+      formData.append('voice_id', voiceId);
+      
+      try {
+        const response = await fetch(`${apiUrl}/api/generate-stream`, {
+          method: 'POST',
+          headers: { Authorization: 'Bearer test-token' },
+          body: formData,
+        });
+        
+        log(`Response status: ${response.status}`, response.ok ? 'success' : 'error');
+        
+        if (!response.ok) {
+          const text = await response.text();
+          log(`Error body: ${text}`, 'error');
+          btn.disabled = false;
+          return;
+        }
+        
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let eventType = '';  // <-- THE FIX: outside the loop
+        let chunkCount = 0;
+        
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            log('Stream ended (done=true)', 'info');
+            break;
+          }
+          
+          chunkCount++;
+          const raw = decoder.decode(value, { stream: true });
+          log(`[Chunk #${chunkCount}] ${raw.length} chars received`, 'info');
+          
+          buffer += raw;
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+          
+          if (buffer.length > 0) {
+            log(`  Buffer holding ${buffer.length} chars for next chunk`);
+          }
+          
+          for (const line of lines) {
+            if (line.startsWith('event: ')) {
+              eventType = line.slice(7).trim();
+              log(`  EVENT: "${eventType}"`);
+            } else if (line.startsWith('data: ')) {
+              const dataStr = line.slice(6);
+              let data;
+              try {
+                data = JSON.parse(dataStr);
+              } catch {
+                log(`  DATA: JSON parse failed (${dataStr.length} chars) — waiting for more`, 'error');
+                continue;
+              }
+              
+              if (eventType === 'progress') {
+                log(`  PROGRESS: ${data.percent}% — ${data.message}`, 'success');
+              } else if (eventType === 'complete' && data.audio) {
+                log(`  COMPLETE: audio base64 length = ${data.audio.length}`, 'success');
+                try {
+                  const binaryString = atob(data.audio);
+                  const bytes = new Uint8Array(binaryString.length);
+                  for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                  }
+                  const audioBlob = new Blob([bytes], { type: 'audio/wav' });
+                  const url = URL.createObjectURL(audioBlob);
+                  
+                  const container = document.getElementById('audioContainer');
+                  container.innerHTML = `<div style="margin-top:10px">
+                    <div class="success">✅ Audio decoded! ${bytes.length} bytes</div>
+                    <audio controls src="${url}"></audio>
+                    <br><a href="${url}" download="generated.wav" style="color:#0f0">Download WAV</a>
+                  </div>`;
+                  
+                  log(`  ✅ Audio blob created: ${bytes.length} bytes`, 'success');
+                } catch (audioErr) {
+                  log(`  ❌ Audio decode FAILED: ${audioErr.message}`, 'error');
+                }
+              } else if (eventType === 'error') {
+                log(`  ERROR from server: ${data.message}`, 'error');
+              } else {
+                log(`  DATA (eventType="${eventType}"): ${JSON.stringify(data).slice(0,100)}`, 'info');
+              }
+            }
+          }
+        }
+        
+        log(`--- Stream complete. Total chunks: ${chunkCount} ---`, 'info');
+        
+      } catch (err) {
+        log(`FETCH ERROR: ${err.message}`, 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>

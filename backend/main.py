@@ -327,7 +327,7 @@ async def api_save_voice(
 
         # 2. Generate embedding
         voice_prompt = await _create_voice_profile(
-            engine_wrapper.get_engine(), file_content, transcript or None
+            manager.get_engine(), file_content, transcript or None
         )
 
         # 3. Serialise embedding and upload
@@ -353,6 +353,9 @@ async def api_save_voice(
 
         return {"id": voice_id, "message": "Voice profile saved successfully"}
     except Exception as e:
+        import traceback
+        print(f"[ERROR] POST /api/voices failed: {str(e)}")
+        print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -609,10 +612,14 @@ async def _generate_sse(
 
         yield sse("progress", {"stage": "complete", "percent": 100, "message": "Done!"})
         yield sse("complete", {"audio": b64, "format": "wav"})
+        yield sse("stream-end", {"status": "complete"})
 
     except Exception as e:
-        print(f"[ERROR] Generation failed: {e}")
-        yield sse("error", {"message": str(e)})
+        import traceback
+        err_msg = str(e)
+        print(f"[ERROR] Generation failed: {err_msg}")
+        print(traceback.format_exc())
+        yield sse("error", {"message": err_msg})
 
 
 @app.post("/api/generate-stream")
@@ -640,7 +647,12 @@ async def generate_voice_stream(
             temperature, top_p, top_k, repetition_penalty,
         ),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            "Content-Type": "text/event-stream; charset=utf-8",
+        },
     )
 
 

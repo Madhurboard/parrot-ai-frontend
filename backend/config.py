@@ -24,7 +24,7 @@ SUPABASE_JWT_SECRET: str = os.environ.get("SUPABASE_JWT_SECRET", "")
 FRONTEND_URLS: list[str] = [
     u.strip()
     for u in os.environ.get(
-        "FRONTEND_URLS", "http://localhost:3000,http://127.0.0.1:3000"
+        "FRONTEND_URLS", "http://localhost:3000,http://127.0.0.1:3000,https://parrotai.madhur.me"
     ).split(",")
 ]
 
@@ -47,6 +47,7 @@ DTYPE = torch.float16 if torch.cuda.is_available() else torch.float32
 # ============================================================================
 VOICE_AUDIO_BUCKET: str = "voices-audio"
 VOICE_EMBEDDING_BUCKET: str = "voices-embeddings"
+GENERATED_AUDIO_BUCKET: str = "generated-audio"
 
 # Local cache dir (for downloaded embeddings during inference)
 CACHE_DIR: str = os.environ.get("CACHE_DIR", os.path.join(os.getcwd(), ".cache"))

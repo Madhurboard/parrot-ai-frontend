@@ -179,16 +179,30 @@ function StudioInner() {
           if (done) break;
 
           buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
+          
+          // Split by double newline to separate complete events
+          const events = buffer.split("\n\n");
+          // Keep the last incomplete event in buffer
+          buffer = events.pop() || "";
 
-          let eventType = "";
-          for (const line of lines) {
-            if (line.startsWith("event: ")) {
-              eventType = line.slice(7).trim();
-            } else if (line.startsWith("data: ")) {
+          for (const eventBlock of events) {
+            if (!eventBlock.trim()) continue; // Skip empty blocks
+            
+            const lines = eventBlock.split("\n");
+            let eventType = "";
+            let eventData = "";
+            
+            for (const line of lines) {
+              if (line.startsWith("event: ")) {
+                eventType = line.slice(7).trim();
+              } else if (line.startsWith("data: ")) {
+                eventData = line.slice(6);
+              }
+            }
+            
+            if (eventType && eventData) {
               try {
-                const data = JSON.parse(line.slice(6));
+                const data = JSON.parse(eventData);
                 if (eventType === "progress") {
                   setProgress({
                     stage: data.stage || "Processing",
@@ -203,16 +217,12 @@ function StudioInner() {
                   }
                   const audioBlob = new Blob([bytes], { type: "audio/wav" });
                   addHistory(URL.createObjectURL(audioBlob), "clone");
-                  setProgress({ stage: "Done", percent: 100, message: "Created." });
+                  setProgress({ stage: "Done", percent: 100, message: "Audio ready!" });
                 } else if (eventType === "error") {
                   throw new Error(data.message || "Failed.");
                 }
               } catch (parseErr) {
-                if (parseErr instanceof Error && parseErr.message !== "Failed.") {
-                  console.warn("SSE parse skip");
-                } else {
-                  throw parseErr;
-                }
+                console.error(`[SSE] Parse error for event ${eventType}:`, parseErr);
               }
             }
           }
