@@ -953,7 +953,7 @@ def warmup_engines():
         m.load_model("base")
         print("[SYSTEM] Warmup complete. Synthesis engine is HOT.")
     except Exception as e:
-        print(f"[SYSTEM] Warmup skipped: {e}")
+        print(f"[SYSTEM] Warmup skipped (models will load on first use): {e}")
 
 @app.on_event("startup")
 async def startup_event():

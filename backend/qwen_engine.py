@@ -20,22 +20,46 @@ class Qwen3TTSModel:
     @classmethod
     def from_pretrained(cls, model_path: str, device: str = "cuda", dtype: torch.dtype = torch.bfloat16):
         """Standard loading method used by ModelManager."""
-        # Load the official model
-        print(f"[Qwen3TTS] Loading local model: {model_path}...")
-        official = OfficialQwen3TTSModel.from_pretrained(
-            model_path,
-            device_map="cuda", # Let Transformers handle all sub-module placement
-            dtype=dtype
-        )
+        # Check if model_path is a local directory with model files
+        if os.path.isdir(model_path) and any(f in os.listdir(model_path) for f in ['pytorch_model.bin', 'model.safetensors', 'tf_model.h5', 'model.ckpt.index', 'flax_model.msgpack']):
+            print(f"[Qwen3TTS] Loading from local cache: {model_path}...")
+            model_source = model_path
+        else:
+            # If it looks like a local path (contains separators), generate HF repo ID
+            if "/" in model_path or "\\" in model_path:
+                # Extract model name from path (e.g., "Qwen3-TTS-1.7B-Base")
+                model_name = os.path.basename(model_path)
+                hf_repo_id = f"Qwen/{model_name}"
+                print(f"[Qwen3TTS] Local model not found. Attempting to download from Hugging Face: {hf_repo_id}...")
+                model_source = hf_repo_id
+            else:
+                # Already looks like a repo ID
+                model_source = model_path
+                print(f"[Qwen3TTS] Loading from Hugging Face: {model_source}...")
         
-        # Handle cases where official might be a tuple (some transformers versions)
-        if isinstance(official, tuple):
-            official = official[0]
-
-        instance = cls(official_model=official)
+        try:
+            print(f"[Qwen3TTS] Loading model: {model_source}...")
+            official = OfficialQwen3TTSModel.from_pretrained(
+                model_source,
+                device_map="cuda", # Let Transformers handle all sub-module placement
+                dtype=dtype
+            )
             
-        print(f"[Qwen3TTS] Load complete.")
-        return instance
+            # Handle cases where official might be a tuple (some transformers versions)
+            if isinstance(official, tuple):
+                official = official[0]
+
+            instance = cls(official_model=official)
+                
+            print(f"[Qwen3TTS] Load complete.")
+            return instance
+        except Exception as e:
+            err_str = str(e)
+            print(f"[Qwen3TTS] Failed to load model: {err_str}")
+            if "is not a local folder" in err_str or "not a valid model" in err_str:
+                print(f"[INFO] Model file not found locally and not available on Hugging Face Hub.")
+                print(f"[INFO] To use local models, download them and place in: {model_path}")
+            raise
 
     def to(self, device: str):
         """Delegate device movement to the official model's internal model."""
